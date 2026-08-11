@@ -4748,7 +4748,14 @@ function buildRecordsForSegment(segRawRows, col){
     const txt = (c)=>{ if(!c) return null; const v = r[c]; if(v==null) return null; const s=String(v).trim(); return s?s:null; };
 
     const sp = rating(col.speed,'speed'), fr = rating(col.friendly,'friendly'), ci = rating(col.checkin,'checkin'), fd = rating(col.food,'food'), cf = rating(col.comfort,'comfort');
-    if(sp==null && fr==null && ci==null && fd==null && cf==null) return; // skip rows with no rating data at all
+    // A row with no ratings at all is usually junk — but not always: a guest can skip every
+    // rating question and still leave a written comment (or an older/differently-formatted
+    // survey row might fail to parse as a rating while its comment text is perfectly fine).
+    // Dropping the whole row in that case silently throws away real, legitimate comments —
+    // exactly the kind of gap that made Q1 undercount. So the row is only skipped when there's
+    // truly nothing usable in it: no ratings AND no text in any of the comment fields.
+    const hasAnyText = [col.comments, col.complaint, col.goodItems, col.improveItems].some(c=>txt(c));
+    if(sp==null && fr==null && ci==null && fd==null && cf==null && !hasAnyText) return;
 
     let dt='', dy='', hr=null;
     if(col.submitted){
