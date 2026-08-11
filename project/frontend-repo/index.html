@@ -4438,22 +4438,20 @@ function buildOrdinalScale(values){
 }
 
 /* What is this column, judged by its contents rather than its title?
-   Sampling is stride-based so the verdict reflects the whole sheet, not just the top. */
-function profileColumnValues(rawRows, colName, sampleTarget){
-  const target = sampleTarget || 400;
+   Scans the full column, not a sample, so the verdict reflects every row. */
+function profileColumnValues(rawRows, colName){
   const vals = [];
   if(!colName || !rawRows.length) return {type:'empty', filled:0, n:0};
-  const stride = Math.max(1, Math.floor(rawRows.length / (target*3)));
-  for(let i=0;i<rawRows.length && vals.length<target;i+=stride){
+  // Scans every row, not a sample — a fixed-size sample can land entirely outside the
+  // range where a conditional/sparse column actually has data (e.g. a column only filled
+  // from partway through a large sheet), which is exactly what caused real comment columns
+  // to be misjudged and rejected before. This is one pass per candidate column, so even a
+  // sheet with 1,00,000+ rows stays fast — the cost is a single linear scan, not repeated
+  // random access.
+  for(let i=0;i<rawRows.length;i++){
     const v = rawRows[i][colName];
     if(v==null || String(v).trim()==='') continue;
     vals.push(v);
-  }
-  if(!vals.length){
-    for(let i=0;i<rawRows.length && vals.length<target;i++){
-      const v = rawRows[i][colName];
-      if(v!=null && String(v).trim()!=='') vals.push(v);
-    }
   }
   const n = vals.length;
   if(!n) return {type:'empty', filled:0, n:0};
@@ -4618,25 +4616,20 @@ function buildSegmentColumnMapping(headerKeys, headerTextByKey, segRawRows){
   const candidateCols = headerKeys.map(k=>({orig:k, low: normalizeHeaderText(headerTextByKey[k]==null?'':String(headerTextByKey[k]))}));
   const col = claimColumnsFromHeaderStrings(candidateCols);
 
-  function sampledValuesForColumn(colName, targetCount){
+  function sampledValuesForColumn(colName){
     const out = [];
     if(!colName || !segRawRows.length) return out;
-    const stride = Math.max(1, Math.floor(segRawRows.length / (targetCount*3)));
-    for(let i=0; i<segRawRows.length && out.length<targetCount; i+=stride){
+    // Scans every row for this column — no sampling, no cap. A steward-vs-meal-type
+    // column swap decided from a partial view of a large sheet is exactly the kind of
+    // silent, hard-to-notice mistake a full scan avoids.
+    for(let i=0; i<segRawRows.length; i++){
       const v = segRawRows[i][colName];
-      if(v==null || String(v).trim()==='') continue;
-      out.push(v);
-    }
-    if(!out.length){
-      for(let i=0;i<segRawRows.length && out.length<targetCount;i++){
-        const v = segRawRows[i][colName];
-        if(v!=null && String(v).trim()!=='') out.push(v);
-      }
+      if(v!=null && String(v).trim()!=='') out.push(v);
     }
     return out;
   }
   function sampledNameLikeRatio(colName){
-    const vals = sampledValuesForColumn(colName, 120);
+    const vals = sampledValuesForColumn(colName);
     if(!vals.length) return 0;
     const good = vals.filter(v=>!looksLikePlaceholderName(String(v).trim())).length;
     return good/vals.length;
@@ -4658,11 +4651,25 @@ function buildSegmentColumnMapping(headerKeys, headerTextByKey, segRawRows){
     profiles[field] = profileColumnValues(segRawRows, col[field]);
   });
   const rejected = {};
+  // These three are conditional/optional comment boxes — often sparse, sometimes short
+  // single-word answers, occasionally numeric-looking by coincidence. That shape can trip
+  // the general-purpose type checks below even when the header match is correct, so these
+  // fields only get rejected for a clear sign of a wrong column (a phone number or a date),
+  // not for an unusual but still plausible free-text shape.
+  const LENIENT_TEXT_FIELDS = new Set(['complaint','goodItems','improveItems']);
   Object.keys(FIELD_VALUE_RULES).forEach(field=>{
     const c2 = col[field];
     if(!c2) return;
     const prof = profiles[field];
     if(!prof || prof.type==='empty') return;
+    if(LENIENT_TEXT_FIELDS.has(field)){
+      if(prof.type==='phone' || prof.type==='date'){
+        rejected[field] = {column:c2, sawType:prof.type, expected:FIELD_VALUE_RULES[field]};
+        col[field] = null;
+        delete profiles[field];
+      }
+      return;
+    }
     if(!FIELD_VALUE_RULES[field].includes(prof.type)){
       rejected[field] = {column:c2, sawType:prof.type, expected:FIELD_VALUE_RULES[field]};
       col[field] = null;
