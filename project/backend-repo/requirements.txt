@@ -1,5 +1,0 @@
-# Fast Rust-based Excel reader — this is what makes the server worth running.
-python-calamine>=0.2.0
-
-# Fallback reader. The server works without calamine using this, just more slowly.
-openpyxl>=3.1.0

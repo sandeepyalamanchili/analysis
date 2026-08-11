@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Three Dashboards — Overview</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root{
+    --bg:#0c223f; --bg2:#0a1c35; --panel:#132451; --panel-hover:#16295c; --border:#2a3d6b; --border-soft:#1c2e5a;
+    --text:#eef2fa; --muted:#b8c5e1; --muted2:#7f8fb3;
+    --orange:#f4b183; --teal:#2dd9a8; --purple:#a78bfa; --red:#e06666; --green:#a8d18d; --blue:#4ea8f2; --yellow:#f7c267;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.5;
+  }
+  .wrap{max-width:1040px;margin:0 auto;padding:48px 24px 80px;}
+  .masthead{margin-bottom:56px;}
+  .masthead .kicker{color:var(--orange);font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px;}
+  .masthead h1{font-size:32px;font-weight:700;margin:0 0 12px;letter-spacing:-0.01em;}
+  .masthead p{color:var(--muted);font-size:15px;max-width:640px;margin:0;}
+
+  .dash-block{margin-bottom:64px;}
+  .dash-head{display:flex;align-items:baseline;gap:14px;margin-bottom:6px;border-bottom:1px solid var(--border-soft);padding-bottom:16px;}
+  .dash-num{font-size:13px;font-weight:700;color:var(--bg);background:var(--orange);width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .dash-head h2{font-size:20px;font-weight:700;margin:0;}
+  .dash-head .sheet-tag{font-size:12px;color:var(--muted2);font-family:ui-monospace,Consolas,monospace;background:var(--panel);border:1px solid var(--border-soft);padding:3px 8px;border-radius:6px;margin-left:auto;white-space:nowrap;}
+  .dash-desc{color:var(--muted);font-size:13.5px;margin:14px 0 20px;}
+
+  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;}
+  .kpi{background:var(--panel);border:1px solid var(--border-soft);border-radius:10px;padding:14px 16px;}
+  .kpi .label{font-size:11.5px;color:var(--muted2);text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px;}
+  .kpi .val{font-size:22px;font-weight:700;}
+  .kpi .sub{font-size:11px;color:var(--muted2);margin-top:4px;}
+
+  .card{background:var(--panel);border:1px solid var(--border-soft);border-radius:10px;padding:16px;margin-bottom:16px;}
+  .card h3{font-size:13px;font-weight:600;margin:0 0 12px;color:var(--muted);}
+  .chart-wrap{position:relative;height:190px;}
+  .chart-wrap.short{height:150px;}
+
+  table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  th{text-align:left;color:var(--muted2);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--border-soft);font-size:11.5px;text-transform:uppercase;letter-spacing:.02em;}
+  td{padding:8px;border-bottom:1px solid var(--border-soft);}
+  tr:last-child td{border-bottom:none;}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;}
+  .pos{color:var(--teal);font-weight:600;}
+  .warn{color:var(--yellow);font-weight:600;}
+  .bad{color:var(--red);font-weight:600;}
+
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  @media (max-width:720px){
+    .kpi-grid{grid-template-columns:repeat(2,1fr);}
+    .two-col{grid-template-columns:1fr;}
+    .dash-head{flex-wrap:wrap;}
+    .dash-head .sheet-tag{margin-left:0;}
+  }
+
+  footer{margin-top:40px;padding-top:20px;border-top:1px solid var(--border-soft);color:var(--muted2);font-size:12px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="masthead">
+    <div class="kicker">Suryapet · Analysis Dashboard</div>
+    <h1>Three dashboards, one upload</h1>
+    <p>Uploading <code style="color:var(--orange)">Suryapet_Reports_01-Apr_to_09_Aug.xlsx</code> automatically detects and builds a separate view for each of these three data sheets — switch between them from the sheet selector, no manual setup needed.</p>
+  </div>
+
+  <!-- ================= 1. KDS ================= -->
+  <div class="dash-block">
+    <div class="dash-head">
+      <div class="dash-num">1</div>
+      <h2>KDS — kitchen timing</h2>
+      <span class="sheet-tag">KD's Data Suryapet</span>
+    </div>
+    <p class="dash-desc">Order-to-kitchen-ready time, broken down by item, category, department and time of day.</p>
+
+    <div class="kpi-grid">
+      <div class="kpi"><div class="label">Total orders</div><div class="val">3,18,850</div></div>
+      <div class="kpi"><div class="label">Avg prep time</div><div class="val">6.2 min</div></div>
+      <div class="kpi"><div class="label">Within 5 min</div><div class="val pos">41.3%</div></div>
+      <div class="kpi"><div class="label">Over 10 min</div><div class="val bad">18.7%</div></div>
+    </div>
+
+    <div class="two-col">
+      <div class="card">
+        <h3>Delivery time breakdown</h3>
+        <div class="chart-wrap short"><canvas id="c1"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>Department performance</h3>
+        <table>
+          <tr><th>Department</th><th>Orders</th><th>Avg time</th></tr>
+          <tr><td>Pantry</td><td class="num">18,159</td><td class="num pos">4.1 min</td></tr>
+          <tr><td>Kitchen</td><td class="num">14,377</td><td class="num warn">7.8 min</td></tr>
+          <tr><td>DOSA</td><td class="num">8,564</td><td class="num bad">11.2 min</td></tr>
+          <tr><td>North Indian</td><td class="num">6,545</td><td class="num warn">8.4 min</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Category → item table (target time editable per item)</h3>
+      <table>
+        <tr><th>Item</th><th>Category</th><th>Avg time</th><th>Target</th></tr>
+        <tr><td>Ghee Karam Dosa</td><td>South Indian Tiffins</td><td class="num">5.4 min</td><td class="num">10 min</td></tr>
+        <tr><td>Chicken Biryani</td><td>Biryani</td><td class="num">9.8 min</td><td class="num">10 min</td></tr>
+        <tr><td>Mango Lassi</td><td>Beverages</td><td class="num pos">2.1 min</td><td class="num">10 min</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- ================= 2. Hourly Sales ================= -->
+  <div class="dash-block">
+    <div class="dash-head">
+      <div class="dash-num">2</div>
+      <h2>Hourly Sales — billing view</h2>
+      <span class="sheet-tag">Hourly Data 7</span>
+    </div>
+    <p class="dash-desc">Revenue, discounts and tax per bill line item, by hour, day of week, category and payment mode.</p>
+
+    <div class="kpi-grid">
+      <div class="kpi"><div class="label">Net revenue</div><div class="val">₹18,42,610</div></div>
+      <div class="kpi"><div class="label">Bills</div><div class="val">8,940</div></div>
+      <div class="kpi"><div class="label">Total discount</div><div class="val">₹42,300</div></div>
+      <div class="kpi"><div class="label">Total tax</div><div class="val">₹92,130</div></div>
+    </div>
+
+    <div class="card">
+      <h3>Revenue by hour</h3>
+      <div class="chart-wrap"><canvas id="c2"></canvas></div>
+    </div>
+
+    <div class="two-col">
+      <div class="card">
+        <h3>Category breakdown</h3>
+        <table>
+          <tr><th>Category</th><th>Items</th><th>Revenue</th></tr>
+          <tr><td>Beverages</td><td class="num">3,204</td><td class="num">₹4,12,900</td></tr>
+          <tr><td>Biryani</td><td class="num">1,850</td><td class="num">₹3,88,200</td></tr>
+          <tr><td>Handcrafted Magic</td><td class="num">2,120</td><td class="num">₹2,95,600</td></tr>
+        </table>
+      </div>
+      <div class="card">
+        <h3>Payment mode</h3>
+        <table>
+          <tr><th>Mode</th><th>Bills</th><th>Revenue</th></tr>
+          <tr><td>UPI</td><td class="num">5,120</td><td class="num">₹10,88,400</td></tr>
+          <tr><td>Cash</td><td class="num">2,610</td><td class="num">₹5,02,300</td></tr>
+          <tr><td>Card</td><td class="num">1,210</td><td class="num">₹2,51,900</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 3. Sale Summary ================= -->
+  <div class="dash-block">
+    <div class="dash-head">
+      <div class="dash-num">3</div>
+      <h2>Sale Summary — price list</h2>
+      <span class="sheet-tag">Sale Data 7</span>
+    </div>
+    <p class="dash-desc">One row per item already totalled for the period: rate, quantity sold, and net revenue.</p>
+
+    <div class="kpi-grid">
+      <div class="kpi"><div class="label">Items</div><div class="val">1,144</div></div>
+      <div class="kpi"><div class="label">Net revenue</div><div class="val">₹36,84,900</div></div>
+      <div class="kpi"><div class="label">Total quantity</div><div class="val">1,92,340</div></div>
+      <div class="kpi"><div class="label">Avg rate</div><div class="val">₹192</div></div>
+    </div>
+
+    <div class="card">
+      <h3>Top items by revenue</h3>
+      <div class="chart-wrap"><canvas id="c3"></canvas></div>
+    </div>
+
+    <div class="card">
+      <h3>Price list (searchable in the real dashboard)</h3>
+      <table>
+        <tr><th>Item</th><th>Rate</th><th>Qty sold</th><th>Net amount</th></tr>
+        <tr><td>Ghee Karam Dosa</td><td class="num">₹149</td><td class="num">2,860</td><td class="num">₹4,26,140</td></tr>
+        <tr><td>Chicken Biryani</td><td class="num">₹389</td><td class="num">1,204</td><td class="num">₹4,68,356</td></tr>
+        <tr><td>Mango Lassi</td><td class="num">₹178</td><td class="num">572</td><td class="num">₹1,01,816</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <footer>Illustrative figures only — the live dashboard fills these in from your uploaded file.</footer>
+</div>
+
+<script>
+const gridColor = '#1c2e5a';
+const tickColor = '#7f8fb3';
+Chart.defaults.color = tickColor;
+Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+
+new Chart(document.getElementById('c1'), {
+  type: 'bar',
+  data: { labels: ['0-5 min','5-10 min','over 10 min'],
+    datasets: [{ data: [41.3,40.0,18.7], backgroundColor: ['#2dd9a8','#f7c267','#e06666'], borderRadius:4, maxBarThickness:44 }] },
+  options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+    scales:{ y:{beginAtZero:true, grid:{color:gridColor}, ticks:{callback:v=>v+'%'}}, x:{grid:{display:false}} } }
+});
+
+new Chart(document.getElementById('c2'), {
+  type: 'bar',
+  data: { labels:['06:00','08:00','10:00','12:00','14:00','16:00','18:00','20:00'],
+    datasets:[{ data:[12000,58000,41000,72000,35000,28000,64000,49000], backgroundColor:'#4ea8f2', borderRadius:4, maxBarThickness:26 }] },
+  options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+    scales:{ y:{beginAtZero:true, grid:{color:gridColor}}, x:{grid:{display:false}} } }
+});
+
+new Chart(document.getElementById('c3'), {
+  type: 'bar',
+  data: { labels:['Mango Lassi','Ghee Karam Dosa','Chicken Biryani'],
+    datasets:[{ data:[101816,426140,468356], backgroundColor:'#f4b183', borderRadius:4, maxBarThickness:26 }] },
+  options: { indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+    scales:{ x:{beginAtZero:true, grid:{color:gridColor}}, y:{grid:{display:false}} } }
+});
+</script>
+</body>
+</html>

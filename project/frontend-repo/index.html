@@ -2718,6 +2718,8 @@ let GENERIC_SHEET_DATA = {};  // { sheetName: {rows, columns} } for sheets that 
 let GOOGLE_SHEET_DATA = {};   // { sheetName: reviewRecordsArray } for sheets detected as Google Reviews exports
 let RATING_SHEET_DATA = {};   // { sheetName: {label, weeks, order, locations} } for multi-location weekly rating summary sheets
 let KDS_SHEET_DATA = {};      // { sheetName: {records, col, confidence} } for kitchen order logs (KDS)
+let HOURLY_SHEET_DATA = {};   // { sheetName: {records, col} } for billwise hourly settlement exports
+let SALE_SHEET_DATA = {};     // { sheetName: {records, col} } for item-level sale/category summary exports
 let RAW_ROWS_BY_SHEET = {};   // kept so changing a worded-answer score can re-derive that sheet's records
 let SHEET_NAMES_ORDERED = []; // preserves the workbook's original sheet order
 let CURRENT_SHEET_NAME = null;
@@ -2765,6 +2767,38 @@ brandNameInput.addEventListener('keydown', (e)=>{
 });
 brandNameInput.addEventListener('blur', commitRename);
 
+// Some exports (billing/settlement reports in particular) prepend a few title/meta rows
+// ("Seven Food Court", a report name, a generated-on timestamp, a blank row) before the
+// real column headers appear. Reading row 1 as the header in that case turns the whole
+// sheet to junk. This scans a small preview of the sheet, and only steps past row 1 when
+// row 1 doesn't already look like a normal header (few cells filled, or the very next row
+// doesn't look like data) — every ordinary sheet keeps behaving exactly as before.
+function robustSheetToRows(ws){
+  const range = ws['!ref'] ? XLSX.utils.decode_range(ws['!ref']) : null;
+  if(!range) return { rawRows: [], headerRowIndex: 0 };
+  const nonNullCount = row => (row||[]).filter(v=>v!=null && String(v).trim()!=='').length;
+  const previewEnd = Math.min(range.e.r, range.s.r + 24);
+  const preview = XLSX.utils.sheet_to_json(ws, {header:1, defval:null, raw:true,
+    range: {s:{r:range.s.r,c:range.s.c}, e:{r:previewEnd,c:range.e.c}}});
+  let headerRowIndex = 0;
+  if(preview.length){
+    const row0 = nonNullCount(preview[0]);
+    const row1 = nonNullCount(preview[1]);
+    if(!(row0>=3 && row1>=3)){
+      for(let i=1;i<preview.length;i++){
+        const cnt = nonNullCount(preview[i]);
+        const prevCnt = nonNullCount(preview[i-1]);
+        if(cnt>=3 && prevCnt<=1){ headerRowIndex = i; break; }
+      }
+    }
+  }
+  const headerRow = (preview[headerRowIndex]||[]).map((v,i)=> v==null || String(v).trim()===''
+    ? ('Column'+(i+1)) : String(v).trim());
+  const rawRows = XLSX.utils.sheet_to_json(ws, {header:headerRow, defval:null, raw:true,
+    range: {s:{r:range.s.r+headerRowIndex+1,c:range.s.c}, e:{r:range.e.r,c:range.e.c}}});
+  return { rawRows, headerRowIndex };
+}
+
 const RATING_SHEET_MAX_ROWS = 5000; // rating-summary trackers are small, hand-curated sheets
 // (a handful of locations) — never large guest-feedback exports. Skipping the extra
 // full-sheet header:1 parse for anything bigger avoids parsing the same big sheet twice.
@@ -2785,6 +2819,7 @@ function getUploadWorker(){
   try{
     const xlsxSrc = document.getElementById('xlsxLibSrc').textContent;
     const workerBody = xlsxSrc + `
+      ${robustSheetToRows.toString()}
       self.onmessage = function(e){
         try{
           const wb = XLSX.read(new Uint8Array(e.data), {type:'array', cellDates:true, cellStyles:false, cellText:false, sheetStubs:false, bookDeps:false, bookFiles:false, bookProps:false, bookVBA:false, cellFormula:false, cellHTML:false, dense:true});
@@ -2797,7 +2832,7 @@ function getUploadWorker(){
             if(approxRowCount>0 && approxRowCount<=${RATING_SHEET_MAX_ROWS}){
               rowsArray = XLSX.utils.sheet_to_json(ws, {header:1, defval:null, raw:true});
             }
-            const rawRows = XLSX.utils.sheet_to_json(ws, {defval:null, raw:true});
+            const rawRows = robustSheetToRows(ws).rawRows;
             self.postMessage({type:'sheet', sheetName:sheetName, rowsArray:rowsArray, rawRows:rawRows});
           });
           self.postMessage({type:'done'});
@@ -2826,6 +2861,8 @@ async function finishMappingSheets(parsedSheets){
     const googleSheetData = {};
     const ratingSheetData = {};
     const kdsSheetData = {};
+    const hourlySheetData = {};
+    const saleSheetData = {};
     const rawRowsBySheet = {};
     const sheetNamesOrdered = [];
     for(let sIdx=0; sIdx<parsedSheets.length; sIdx++){
@@ -2865,6 +2902,22 @@ async function finishMappingSheets(parsedSheets){
         sheetNamesOrdered.push(sheetName);
         continue;
       }
+      const hourlyMapped = mapRowsToHourly(rawRows);
+      const hourlyConfidence = assessHourlyConfidence(rawRows, hourlyMapped, HOURLY_COL_MAP);
+      if(hourlyConfidence.ok){
+        hourlySheetData[sheetName] = { records: hourlyMapped, col: {...HOURLY_COL_MAP} };
+        sheetModes[sheetName] = 'hourly';
+        sheetNamesOrdered.push(sheetName);
+        continue;
+      }
+      const saleMapped = mapRowsToSaleSummary(rawRows);
+      const saleConfidence = assessSaleConfidence(rawRows, saleMapped, SALE_COL_MAP);
+      if(saleConfidence.ok){
+        saleSheetData[sheetName] = { records: saleMapped, col: {...SALE_COL_MAP} };
+        sheetModes[sheetName] = 'sale_summary';
+        sheetNamesOrdered.push(sheetName);
+        continue;
+      }
       // Doesn't look like the 7MP guest-feedback format, a rating-summary
       // report, or a Google Reviews export — fall back to generic
       // auto-detection so a dashboard is still produced.
@@ -2882,6 +2935,8 @@ async function finishMappingSheets(parsedSheets){
     GOOGLE_SHEET_DATA = googleSheetData;
     RATING_SHEET_DATA = ratingSheetData;
     KDS_SHEET_DATA = kdsSheetData;
+    HOURLY_SHEET_DATA = hourlySheetData;
+    SALE_SHEET_DATA = saleSheetData;
     RAW_ROWS_BY_SHEET = rawRowsBySheet;
     SHEET_NAMES_ORDERED = sheetNamesOrdered;
     switchToSheet(sheetNamesOrdered[0]);
@@ -2899,7 +2954,7 @@ async function processWorkbookOnMainThread(arrayBuffer){
     const range = ws['!ref'] ? XLSX.utils.decode_range(ws['!ref']) : null;
     const approxRowCount = range ? (range.e.r - range.s.r + 1) : 0;
     const rowsArray = (approxRowCount>0 && approxRowCount<=RATING_SHEET_MAX_ROWS) ? XLSX.utils.sheet_to_json(ws, {header:1, defval:null, raw:true}) : null;
-    const rawRows = XLSX.utils.sheet_to_json(ws, {defval:null, raw:true});
+    const rawRows = robustSheetToRows(ws).rawRows;
     return {sheetName, rowsArray, rawRows};
   });
   await finishMappingSheets(parsedSheets);
@@ -3699,6 +3754,162 @@ function renderKdsSheet(sheetName){
   }
 }
 
+function renderHourlySheet(sheetName){
+  destroyCharts();
+  document.getElementById('tabNav').style.display = 'none';
+  document.getElementById('filterBar').style.display = 'none';
+  document.getElementById('uploadScreen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  applyBrandName();
+
+  const { records, col } = HOURLY_SHEET_DATA[sheetName];
+  const dates = [...new Set(records.map(r=>r.dt).filter(Boolean))].sort();
+  const dateTxt = dates.length ? `${dates[0]} to ${dates[dates.length-1]} · ` : '';
+  document.getElementById('headerSub').textContent = `${dateTxt}${records.length.toLocaleString()} line items · Hourly Sales view`;
+
+  const root = document.getElementById('content');
+  root.innerHTML = '';
+
+  const detected = [
+    ['Item', col.item], ['Category', col.category], ['Bill No.', col.billNo],
+    ['Date', col.date], ['Hour', col.hour], ['Total', col.total], ['Payment mode', col.paymentMode],
+  ];
+  root.appendChild(el(`<div class="card" style="border-left:3px solid ${C.blue};margin-bottom:16px;">
+    <p style="font-size:12.5px;color:var(--muted);line-height:1.7;">🧾 <b style="color:var(--text)">Hourly billing/settlement view</b> — each row is one item line from a bill, so totals here are revenue, not kitchen prep time.</p>
+    <div class="colmeta-row" style="margin-top:10px;">${detected.map(([label,c])=>
+      `<span class="colmeta-chip">${label}: <b>${c?escapeHtml(String(c)):'—'}</b></span>`).join('')}</div>
+  </div>`));
+
+  const totalRevenue = records.reduce((s,r)=>s+(r.subtotal||r.total||0),0);
+  const totalDiscount = records.reduce((s,r)=>s+(r.discount||0),0);
+  const totalTax = records.reduce((s,r)=>s+(r.tax||0),0);
+  const bills = new Set(records.map(r=>r.billNo).filter(Boolean));
+
+  root.appendChild(el(`<div class="grid grid-4">
+    ${kpiCard('₹'+Math.round(totalRevenue).toLocaleString(),'Net Revenue','sum of subtotal (post-discount)',C.teal)}
+    ${kpiCard(bills.size ? bills.size.toLocaleString() : records.length.toLocaleString(),'Bills','distinct bill numbers',C.blue)}
+    ${kpiCard('₹'+Math.round(totalDiscount).toLocaleString(),'Total Discount','given across the period',C.orange)}
+    ${kpiCard('₹'+Math.round(totalTax).toLocaleString(),'Total Tax','collected across the period',C.purple)}
+  </div>`));
+
+  // ---- revenue by hour ------------------------------------------------------------
+  const withHour = records.filter(r=>r.hr!=null && r.hr>=0 && r.hr<=23);
+  if(withHour.length){
+    root.appendChild(el(`<h3 class="section-title">Revenue by Hour <span class="section-sub">when the money comes in across the day</span></h3>`));
+    const HOURS = Array.from({length:24},(_,i)=>i);
+    const revByHour = HOURS.map(h=>withHour.filter(r=>r.hr===h).reduce((s,r)=>s+(r.subtotal||r.total||0),0));
+    root.appendChild(el(`<div class="card"><div class="chart-wrap"><canvas id="hourlyRevChart"></canvas></div></div>`));
+    mkChart(document.getElementById('hourlyRevChart'), {type:'bar',
+      data:{labels:HOURS.map(h=>String(h).padStart(2,'0')+':00'), datasets:[{data:revByHour, backgroundColor:C.blue, borderRadius:4}]},
+      options:{plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,grid:{color:'#ffffff10'},title:{display:true,text:'Revenue',color:'#8fa0ba'}},x:{grid:{display:false}}}}});
+  }
+
+  // ---- revenue by day of week -------------------------------------------------------
+  const withDow = records.filter(r=>r.dow!=null);
+  if(withDow.length){
+    const DOWN = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const revByDow = DOWN.map((d,i)=>withDow.filter(r=>r.dow===i).reduce((s,r)=>s+(r.subtotal||r.total||0),0));
+    root.appendChild(el(`<h3 class="section-title">Revenue by Day of Week</h3>`));
+    root.appendChild(el(`<div class="card"><div class="chart-wrap short"><canvas id="hourlyDowChart"></canvas></div></div>`));
+    mkChart(document.getElementById('hourlyDowChart'), {type:'bar',
+      data:{labels:DOWN, datasets:[{data:revByDow, backgroundColor:C.teal, borderRadius:4}]},
+      options:{plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,grid:{color:'#ffffff10'}},x:{grid:{display:false}}}}});
+  }
+
+  // ---- category breakdown -----------------------------------------------------------
+  const byCat = groupBy(records, r=>r.cat);
+  const catRows = [...byCat.entries()].map(([name,g])=>({
+    name, n:g.length, revenue:g.reduce((s,r)=>s+(r.subtotal||r.total||0),0)
+  })).sort((a,b)=>b.revenue-a.revenue);
+  root.appendChild(el(`<h3 class="section-title">Category Breakdown <span class="section-sub">by net revenue</span></h3>`));
+  root.appendChild(el(`<div class="card"><div style="overflow-x:auto;"><table class="dtable">
+    <thead><tr><th>Category</th><th>Line Items</th><th>Revenue</th></tr></thead>
+    <tbody>${catRows.map(r=>`<tr><td>${escapeHtml(r.name)}</td><td>${r.n.toLocaleString()}</td><td style="font-weight:700;color:${C.teal};">₹${Math.round(r.revenue).toLocaleString()}</td></tr>`).join('')}</tbody>
+  </table></div></div>`));
+
+  // ---- payment mode breakdown ---------------------------------------------------------
+  const byPay = groupBy(records, r=>r.paymentMode);
+  const payRows = [...byPay.entries()].map(([name,g])=>({name, n:g.length, revenue:g.reduce((s,r)=>s+(r.subtotal||r.total||0),0)})).sort((a,b)=>b.revenue-a.revenue);
+  if(payRows.length>1){
+    root.appendChild(el(`<h3 class="section-title">Payment Mode Breakdown</h3>`));
+    root.appendChild(el(`<div class="card"><div style="overflow-x:auto;"><table class="dtable">
+      <thead><tr><th>Payment Mode</th><th>Line Items</th><th>Revenue</th></tr></thead>
+      <tbody>${payRows.map(r=>`<tr><td>${escapeHtml(r.name)}</td><td>${r.n.toLocaleString()}</td><td style="font-weight:700;color:${C.purple};">₹${Math.round(r.revenue).toLocaleString()}</td></tr>`).join('')}</tbody>
+    </table></div></div>`));
+  }
+
+  // ---- top items by revenue ----------------------------------------------------------
+  const byItem = groupBy(records, r=>r.item);
+  const topItems = [...byItem.entries()].map(([name,g])=>({name, n:g.length, revenue:g.reduce((s,r)=>s+(r.subtotal||r.total||0),0)}))
+    .sort((a,b)=>b.revenue-a.revenue).slice(0,15);
+  root.appendChild(el(`<h3 class="section-title">Top Items by Revenue</h3>`));
+  root.appendChild(el(`<div class="card"><div class="chart-wrap"><canvas id="hourlyTopItemsChart"></canvas></div></div>`));
+  mkChart(document.getElementById('hourlyTopItemsChart'), {type:'bar',
+    data:{labels:topItems.map(t=>t.name), datasets:[{data:topItems.map(t=>t.revenue), backgroundColor:C.orange, borderRadius:4}]},
+    options:{indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true,grid:{color:'#ffffff10'}},y:{grid:{display:false}}}}});
+}
+
+function renderSaleDataSheet(sheetName){
+  destroyCharts();
+  document.getElementById('tabNav').style.display = 'none';
+  document.getElementById('filterBar').style.display = 'none';
+  document.getElementById('uploadScreen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  applyBrandName();
+
+  const { records, col } = SALE_SHEET_DATA[sheetName];
+  document.getElementById('headerSub').textContent = `${records.length.toLocaleString()} items · Sale Summary view`;
+
+  const root = document.getElementById('content');
+  root.innerHTML = '';
+
+  const detected = [['Item', col.item], ['Rate', col.rate], ['Quantity', col.qty], ['Net Amount', col.netAmt]];
+  root.appendChild(el(`<div class="card" style="border-left:3px solid ${C.purple};margin-bottom:16px;">
+    <p style="font-size:12.5px;color:var(--muted);line-height:1.7;">💰 <b style="color:var(--text)">Item sale summary</b> — one row per item already aggregated over the whole period (price, quantity sold, net revenue).</p>
+    <div class="colmeta-row" style="margin-top:10px;">${detected.map(([label,c])=>
+      `<span class="colmeta-chip">${label}: <b>${c?escapeHtml(String(c)):'—'}</b></span>`).join('')}</div>
+  </div>`));
+
+  const totalRevenue = records.reduce((s,r)=>s+(r.netAmt||0),0);
+  const totalQty = records.reduce((s,r)=>s+(r.qty||0),0);
+  const avgRate = records.filter(r=>r.rate!=null).length ? records.filter(r=>r.rate!=null).reduce((s,r)=>s+r.rate,0)/records.filter(r=>r.rate!=null).length : null;
+
+  root.appendChild(el(`<div class="grid grid-4">
+    ${kpiCard(records.length.toLocaleString(),'Items','distinct items sold',C.blue)}
+    ${kpiCard('₹'+Math.round(totalRevenue).toLocaleString(),'Net Revenue','across all items',C.teal)}
+    ${kpiCard(totalQty.toLocaleString(),'Total Quantity Sold','non-complimentary units',C.orange)}
+    ${kpiCard(avgRate==null?'—':'₹'+fmt1(avgRate),'Average Rate','per item',C.purple)}
+  </div>`));
+
+  const topByRevenue = [...records].sort((a,b)=>b.netAmt-a.netAmt).slice(0,15);
+  root.appendChild(el(`<h3 class="section-title">Top Items by Revenue</h3>`));
+  root.appendChild(el(`<div class="card"><div class="chart-wrap"><canvas id="saleTopRevChart"></canvas></div></div>`));
+  mkChart(document.getElementById('saleTopRevChart'), {type:'bar',
+    data:{labels:topByRevenue.map(t=>t.item), datasets:[{data:topByRevenue.map(t=>t.netAmt), backgroundColor:C.teal, borderRadius:4}]},
+    options:{indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true,grid:{color:'#ffffff10'}},y:{grid:{display:false}}}}});
+
+  const topByQty = [...records].sort((a,b)=>b.qty-a.qty).slice(0,15);
+  root.appendChild(el(`<h3 class="section-title">Top Items by Quantity Sold</h3>`));
+  root.appendChild(el(`<div class="card"><div class="chart-wrap"><canvas id="saleTopQtyChart"></canvas></div></div>`));
+  mkChart(document.getElementById('saleTopQtyChart'), {type:'bar',
+    data:{labels:topByQty.map(t=>t.item), datasets:[{data:topByQty.map(t=>t.qty), backgroundColor:C.orange, borderRadius:4}]},
+    options:{indexAxis:'y', plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true,grid:{color:'#ffffff10'}},y:{grid:{display:false}}}}});
+
+  root.appendChild(el(`<h3 class="section-title">Full Price List <span class="section-sub">searchable · sorted by revenue</span></h3>`));
+  root.appendChild(el(`<input class="search-input" id="saleItemSearch" placeholder="Search items…">`));
+  root.appendChild(el(`<div id="saleTableWrap" style="margin-top:12px;"></div>`));
+  function drawTable(){
+    const q = (document.getElementById('saleItemSearch').value||'').toLowerCase();
+    const rows = [...records].filter(r=>!q || r.item.toLowerCase().includes(q)).sort((a,b)=>b.netAmt-a.netAmt);
+    document.getElementById('saleTableWrap').innerHTML = `<div class="card"><div style="overflow-x:auto;"><table class="dtable">
+      <thead><tr><th>Item</th><th>Rate</th><th>Quantity Sold</th><th>Net Amount</th></tr></thead>
+      <tbody>${rows.map(r=>`<tr><td>${escapeHtml(r.item)}</td><td>${r.rate==null?'—':'₹'+fmt1(r.rate)}</td><td>${r.qty.toLocaleString()}</td><td style="font-weight:700;color:${C.teal};">₹${Math.round(r.netAmt).toLocaleString()}</td></tr>`).join('')}</tbody>
+    </table></div></div>`;
+  }
+  drawTable();
+  document.getElementById('saleItemSearch').oninput = drawTable;
+}
+
 function switchToSheet(sheetName){
   const mode = SHEET_MODE[sheetName];
   CURRENT_SHEET_NAME = sheetName;
@@ -3719,6 +3930,14 @@ function switchToSheet(sheetName){
     renderKdsSheet(sheetName);
     return;
   }
+  if(mode === 'hourly'){
+    renderHourlySheet(sheetName);
+    return;
+  }
+  if(mode === 'sale_summary'){
+    renderSaleDataSheet(sheetName);
+    return;
+  }
   if(!SHEET_DATA[sheetName]) return;
   document.getElementById('tabNav').style.display = '';
   document.getElementById('filterBar').style.display = '';
@@ -3735,9 +3954,9 @@ function buildSheetSelector(){
   wrap.style.display = 'flex';
   sel.innerHTML = SHEET_NAMES_ORDERED.map(n=>{
     const mode = SHEET_MODE[n];
-    const rowCount = mode==='generic' ? GENERIC_SHEET_DATA[n].rows.length : mode==='google_reviews' ? GOOGLE_SHEET_DATA[n].length : mode==='rating_summary' ? RATING_SHEET_DATA[n].order.length : mode==='kds' ? KDS_SHEET_DATA[n].records.length : SHEET_DATA[n].length;
-    const unit = mode==='rating_summary' ? ' locations' : mode==='kds' ? ' orders' : ' rows';
-    const suffix = mode==='generic' ? ' — auto-detected' : mode==='google_reviews' ? ' — Google Reviews' : mode==='rating_summary' ? ' — Rating Summary' : mode==='kds' ? ' — KDS' : '';
+    const rowCount = mode==='generic' ? GENERIC_SHEET_DATA[n].rows.length : mode==='google_reviews' ? GOOGLE_SHEET_DATA[n].length : mode==='rating_summary' ? RATING_SHEET_DATA[n].order.length : mode==='kds' ? KDS_SHEET_DATA[n].records.length : mode==='hourly' ? HOURLY_SHEET_DATA[n].records.length : mode==='sale_summary' ? SALE_SHEET_DATA[n].records.length : SHEET_DATA[n].length;
+    const unit = mode==='rating_summary' ? ' locations' : mode==='kds' ? ' orders' : mode==='hourly' ? ' line items' : mode==='sale_summary' ? ' items' : ' rows';
+    const suffix = mode==='generic' ? ' — auto-detected' : mode==='google_reviews' ? ' — Google Reviews' : mode==='rating_summary' ? ' — Rating Summary' : mode==='kds' ? ' — KDS' : mode==='hourly' ? ' — Hourly Sales' : mode==='sale_summary' ? ' — Sale Summary' : '';
     return `<option value="${escapeHtml(n)}" ${n===CURRENT_SHEET_NAME?'selected':''}>${escapeHtml(n)} (${rowCount.toLocaleString()}${unit}${suffix})</option>`;
   }).join('');
 }
@@ -3953,7 +4172,7 @@ function mapRowsToKds(rawRows){
   // generic 'time'/'date' ones, so "Order Time" can't be swallowed by a bare "Time".
   const col = {
     orderTime:    claim(['order time','ordered at','order placed','punch time','punched at','kot time','order date time','order datetime','start time']),
-    deliveryTime: claim(['delivery time','delivered at','served at','serve time','completed at','complete time','ready at','ready time','close time','closed at','end time','finish time']),
+    deliveryTime: claim(['bump time of kds','kds screen','kds bump','delivery time','delivered at','served at','serve time','completed at','complete time','ready at','ready time','close time','closed at','end time','finish time']),
     item:         claim(['item name','item description','product name','dish name','menu item','item','dish','product']),
     category:     claim(['category name','item category','sub category','subcategory','category','group','menu group']),
     department:   claim(['department','dept','station','kitchen','counter','section','outlet section','prep area']),
@@ -4038,6 +4257,123 @@ function kdsStandardSource(item, cat){
   if(Object.prototype.hasOwnProperty.call(KDS_STANDARDS, 'item::'+item)) return 'item';
   if(Object.prototype.hasOwnProperty.call(KDS_STANDARDS, 'cat::'+cat)) return 'category';
   return 'default';
+}
+
+/* =========================================================
+   HOURLY / BILLWISE SETTLEMENT DATA — POS export with one row per item sold, carrying
+   the bill's revenue split (total, discount, subtotal, tax), payment mode, category, and
+   the hour it was rung up. Its own dashboard: revenue by hour, category/payment-mode
+   breakdowns, top items.
+========================================================= */
+let HOURLY_COL_MAP = {};
+function mapRowsToHourly(rawRows){
+  const cols = Object.keys(rawRows[0]||{});
+  const claimed = new Set();
+  const claim = (patterns)=>{
+    const hit = findCol(cols.filter(c=>!claimed.has(c)), patterns);
+    if(hit) claimed.add(hit);
+    return hit;
+  };
+  // Order matters: 'subtotal' and 'product item number' are claimed before the more
+  // generic 'total' and 'product item' patterns, since "Subtotal" and "Product Item
+  // Number" would otherwise satisfy those broader patterns too and get grabbed first.
+  const col = {
+    billNo:      claim(['bill no','bill number','invoice no','invoice number']),
+    date:        claim(['date','order date','business date','bill date']),
+    subtotal:    claim(['subtotal','sub total']),
+    total:       claim(['total','grand total','gross amount']),
+    discount:    claim(['discount']),
+    tax:         claim(['taxes','tax','gst']),
+    paymentMode: claim(['payment mode','payment type','mode of payment']),
+    itemNumber:  claim(['product item number','item number','item code']),
+    item:        claim(['product item','item name','item','dish']),
+    category:    claim(['category']),
+    superCat:    claim(['super category']),
+    section:     claim(['section']),
+    hour:        claim(['hour']),
+    outlet:      claim(['deployment','outlet','location']),
+  };
+  HOURLY_COL_MAP = col;
+
+  const records = [];
+  rawRows.forEach(r=>{
+    const txt = c => { if(!c) return null; const v=r[c]; if(v==null) return null; const s=String(v).trim(); return s?s:null; };
+    const num = c => { if(!c) return null; const v=r[c]; if(v==null||v==='') return null; const n=Number(v); return isNaN(n)?null:n; };
+    const item = txt(col.item);
+    const total = num(col.total);
+    if(!item && total==null) return; // nothing usable on this row
+
+    const when = col.date ? kdsParseMoment(r[col.date], null) : null;
+    const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    let hr = col.hour ? num(col.hour) : null;
+    if(hr==null && when) hr = when.getHours();
+
+    records.push({
+      item: item || 'Unspecified item',
+      cat: txt(col.category) || 'Uncategorised',
+      superCat: txt(col.superCat),
+      section: txt(col.section),
+      billNo: txt(col.billNo),
+      paymentMode: txt(col.paymentMode) || 'Unspecified',
+      total: total ?? 0,
+      subtotal: num(col.subtotal) ?? 0,
+      discount: num(col.discount) ?? 0,
+      tax: num(col.tax) ?? 0,
+      hr,
+      dow: when ? when.getDay() : null,
+      dowLabel: when ? days[when.getDay()] : null,
+      dt: when ? when.toISOString().slice(0,10) : '',
+    });
+  });
+  return records;
+}
+function assessHourlyConfidence(rawRows, records, col){
+  if(!records.length) return {ok:false};
+  const hasItem = !!col.item;
+  const hasMoney = !!col.total || !!col.subtotal;
+  const hasBillOrHour = !!col.billNo || !!col.hour || !!col.date;
+  const coverage = rawRows.length ? records.length/rawRows.length : 0;
+  return { ok: hasItem && hasMoney && hasBillOrHour && coverage >= 0.3, hasItem, hasMoney, hasBillOrHour, coverage };
+}
+
+/* =========================================================
+   SALE / ITEM-CATEGORY SUMMARY DATA — a compact, already-aggregated item price list:
+   one row per item with its rate, quantity sold, and net revenue over the period.
+========================================================= */
+let SALE_COL_MAP = {};
+function mapRowsToSaleSummary(rawRows){
+  const cols = Object.keys(rawRows[0]||{});
+  const claimed = new Set();
+  const claim = (patterns)=>{
+    const hit = findCol(cols.filter(c=>!claimed.has(c)), patterns);
+    if(hit) claimed.add(hit);
+    return hit;
+  };
+  const col = {
+    item:   claim(['item name','item','dish name','product name']),
+    rate:   claim(['rate','price','unit price']),
+    qty:    claim(['non-complimentary','non complimentary','quantity','qty','units sold']),
+    netAmt: claim(['net amt','net amount','net revenue','revenue','amount']),
+  };
+  SALE_COL_MAP = col;
+
+  const records = [];
+  rawRows.forEach(r=>{
+    const txt = c => { if(!c) return null; const v=r[c]; if(v==null) return null; const s=String(v).trim(); return s?s:null; };
+    const num = c => { if(!c) return null; const v=r[c]; if(v==null||v==='') return null; const n=Number(v); return isNaN(n)?null:n; };
+    const item = txt(col.item);
+    const netAmt = num(col.netAmt);
+    if(!item) return;
+    records.push({ item, rate: num(col.rate), qty: num(col.qty) ?? 0, netAmt: netAmt ?? 0 });
+  });
+  return records;
+}
+function assessSaleConfidence(rawRows, records, col){
+  if(!records.length) return {ok:false};
+  const hasItem = !!col.item;
+  const hasMoney = !!col.rate || !!col.netAmt;
+  const coverage = rawRows.length ? records.length/rawRows.length : 0;
+  return { ok: hasItem && hasMoney && coverage >= 0.5, hasItem, hasMoney, coverage };
 }
 
 /* =========================================================
@@ -4382,6 +4718,39 @@ function claimColumnsFromHeaderStrings(candidateCols){
     if(hit) claimedCols.add(hit);
     col[field] = hit;
   });
+  // Positional fallback: in every export we've seen, each conditional comment box sits in
+  // the column(s) immediately to the right of the rating question it belongs to — "What
+  // happened" right after the service-speed rating, and the two food comment boxes right
+  // after the food rating. If header wording didn't match any known phrase (a new wording
+  // variant we haven't seen before), grab the adjacent unclaimed column(s) instead of
+  // leaving the comment unread. Only a column whose actual values look like free text
+  // (checked by FIELD_VALUE_RULES via inferColumnType elsewhere) ever gets used this way —
+  // see the guard below.
+  const orderedCols = candidateCols.map(c=>c.orig);
+  function adjacentUnclaimed(anchorField, offset){
+    const anchorCol = col[anchorField];
+    if(!anchorCol) return null;
+    const anchorIdx = orderedCols.indexOf(anchorCol);
+    if(anchorIdx===-1) return null;
+    const candidate = orderedCols[anchorIdx+offset];
+    if(!candidate || claimedCols.has(candidate)) return null;
+    return candidate;
+  }
+  if(!col.complaint){
+    const fallback = adjacentUnclaimed('speed', 1);
+    if(fallback){ col.complaint = fallback; claimedCols.add(fallback); }
+  }
+  if(!col.goodItems){
+    const fallback = adjacentUnclaimed('food', 1);
+    if(fallback){ col.goodItems = fallback; claimedCols.add(fallback); }
+  }
+  if(!col.improveItems){
+    // The "could be improved" box sits one further column over than "did you like" when
+    // both are present; if goodItems just claimed food+1, this looks at food+2 instead.
+    const offset = (col.goodItems && orderedCols.indexOf(col.goodItems)===orderedCols.indexOf(col.food)+1) ? 2 : 1;
+    const fallback = adjacentUnclaimed('food', offset);
+    if(fallback){ col.improveItems = fallback; claimedCols.add(fallback); }
+  }
   return col;
 }
 // How many distinct fields would this row's VALUES match, if treated as header text? Real

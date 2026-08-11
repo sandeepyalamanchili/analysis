@@ -111,6 +111,29 @@ def _sheet_names(data: bytes):
         wb.close()
 
 
+def _detect_header_row(preview_rows):
+    """Some exports (billing/settlement reports especially) prepend a few title/meta rows
+    — an outlet name, a report title, a "Generated On" line, a blank row — before the real
+    column headers appear. Reading row 0 as the header in that case turns the whole sheet
+    to junk. This mirrors the browser parser's heuristic: row 0 is trusted as the header
+    only when it and the row right after it both already look populated (the normal case);
+    otherwise we scan for the first well-populated row that follows a mostly-empty one."""
+    def nn(r):
+        return sum(1 for v in (r or []) if v is not None and str(v).strip() != "")
+    if not preview_rows:
+        return 0
+    row0 = nn(preview_rows[0])
+    row1 = nn(preview_rows[1]) if len(preview_rows) > 1 else 0
+    if row0 >= 3 and row1 >= 3:
+        return 0
+    for i in range(1, len(preview_rows)):
+        cnt = nn(preview_rows[i])
+        prev_cnt = nn(preview_rows[i - 1])
+        if cnt >= 3 and prev_cnt <= 1:
+            return i
+    return 0
+
+
 def _sheet_rows(data: bytes, index: int):
     """Returns (header_list, list_of_row_lists) for one sheet."""
     if PARSER == "calamine":
@@ -120,16 +143,26 @@ def _sheet_rows(data: bytes, index: int):
         rows = wb.get_sheet_by_name(name).to_python()
         if not rows:
             return [], []
-        return rows[0], rows[1:]
+        idx = _detect_header_row(rows[:25])
+        return rows[idx], rows[idx + 1:]
     import openpyxl
     wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     try:
         ws = wb[wb.sheetnames[index]]
         it = ws.iter_rows(values_only=True)
-        header = next(it, None)
-        if header is None:
+        preview = []
+        for _ in range(25):
+            try:
+                preview.append(next(it))
+            except StopIteration:
+                break
+        if not preview:
             return [], []
-        return list(header), [list(r) for r in it]
+        idx = _detect_header_row(preview)
+        header = list(preview[idx])
+        rest = [list(r) for r in preview[idx + 1:]]
+        remaining = [list(r) for r in it]
+        return header, rest + remaining
     finally:
         wb.close()
 
