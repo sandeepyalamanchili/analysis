@@ -3425,7 +3425,7 @@ function renderKdsSheet(sheetName){
 
   root.appendChild(el(`<h3 class="section-title">Standard Times <span class="section-sub">set your own target per category or per item — change them any time, everything below re-scores instantly</span></h3>`));
   root.appendChild(el(`<div class="card" style="border-left:3px solid ${C.orange};">
-    <p style="font-size:12.5px;color:var(--muted);line-height:1.65;">Targets you set here drive the "vs standard" column and the over-target counts. An <b style="color:var(--text)">item</b> target overrides its <b style="color:var(--text)">category</b> target; anything with neither uses the default of <b style="color:var(--text)">${KDS_DEFAULT_STANDARD} min</b>. Leave a field blank to clear it. These targets are saved into the dashboard when you use Download, so they travel with the file.</p>
+    <p style="font-size:12.5px;color:var(--muted);line-height:1.65;">Targets you set here drive the "vs standard" column and the over-target counts. An <b style="color:var(--text)">item</b> target overrides its <b style="color:var(--text)">category</b> target; anything with neither uses 7 Midway Plaza's own reference sheet where the item is listed, and only falls back to a flat <b style="color:var(--text)">${KDS_DEFAULT_STANDARD} min</b> default when it isn't. Leave a field blank to clear your override and go back to the reference/default. These targets are saved into the dashboard when you use Download, so they travel with the file.</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;align-items:center;">
       <button class="filter-btn" id="kdsResetStd">Reset all targets</button>
       <span class="section-sub" id="kdsStdSummary"></span>
@@ -3452,11 +3452,12 @@ function renderKdsSheet(sheetName){
     wrap.innerHTML = cats.map(cat=>{
       const items = [...itemsByCat.get(cat)].sort();
       const catVal = Object.prototype.hasOwnProperty.call(KDS_STANDARDS,'cat::'+cat) ? KDS_STANDARDS['cat::'+cat] : '';
+      const catPlaceholder = fmt1((cat in KDS_REF_CAT_AVG) ? KDS_REF_CAT_AVG[cat] : KDS_DEFAULT_STANDARD);
       return `<div class="card" style="margin-bottom:10px;">
         <div class="card-title">
           <span>${escapeHtml(cat)} <span class="section-sub">${items.length} item${items.length===1?'':'s'}</span></span>
           <span style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);">Category target
-            <input type="number" min="0" step="0.5" class="kds-std-input" data-scope="cat" data-key="${escapeHtml(cat)}" value="${catVal}" placeholder="${KDS_DEFAULT_STANDARD}" style="width:74px;">min</span>
+            <input type="number" min="0" step="0.5" class="kds-std-input" data-scope="cat" data-key="${escapeHtml(cat)}" value="${catVal}" placeholder="${catPlaceholder}" style="width:74px;">min</span>
         </div>
         <div style="overflow-x:auto;"><table class="dtable">
           <thead><tr><th>Item</th><th>Item target</th><th>Effective</th></tr></thead>
@@ -3464,16 +3465,16 @@ function renderKdsSheet(sheetName){
             const itVal = Object.prototype.hasOwnProperty.call(KDS_STANDARDS,'item::'+it) ? KDS_STANDARDS['item::'+it] : '';
             const eff = kdsStandardFor(it, cat), src = kdsStandardSource(it, cat);
             return `<tr><td>${escapeHtml(it)}</td>
-              <td><input type="number" min="0" step="0.5" class="kds-std-input" data-scope="item" data-key="${escapeHtml(it)}" value="${itVal}" placeholder="—" style="width:74px;"> min</td>
-              <td style="color:var(--muted);">${fmt1(eff)} min <span class="section-sub">(${src==='item'?'item target':src==='category'?'from category':'default'})</span></td></tr>`;
+              <td><input type="number" min="0" step="0.5" class="kds-std-input" data-scope="item" data-key="${escapeHtml(it)}" value="${itVal}" placeholder="${fmt1(eff)}" style="width:74px;"> min</td>
+              <td style="color:var(--muted);">${fmt1(eff)} min <span class="section-sub">(${src==='item'?'item target':src==='category'?'from category':src==='reference'?'reference sheet':src==='reference-category'?'reference avg':'default'})</span></td></tr>`;
           }).join('')}</tbody></table></div>
       </div>`;
     }).join('');
 
     const setCount = Object.keys(KDS_STANDARDS).length;
     document.getElementById('kdsStdSummary').textContent = setCount
-      ? `${setCount} target${setCount===1?'':'s'} set — everything else uses the ${KDS_DEFAULT_STANDARD} min default.`
-      : `No targets set yet — everything is being judged against the ${KDS_DEFAULT_STANDARD} min default.`;
+      ? `${setCount} target${setCount===1?'':'s'} manually set — everything else uses the reference sheet where available, or the ${KDS_DEFAULT_STANDARD} min default.`
+      : `No manual overrides yet — using 7 Midway Plaza's reference sheet where the item is listed, and the ${KDS_DEFAULT_STANDARD} min default elsewhere.`;
 
     wrap.querySelectorAll('.kds-std-input').forEach(inp=>{
       inp.onchange = ()=>{
@@ -3956,9 +3957,131 @@ function prettyLabelGeneric(name){
    rather than hiding the dimension or inventing one. When a department
    column does appear later, it lights up with no other change needed.
 ========================================================= */
-let KDS_STANDARDS = {};        // { 'cat::<category>': minutes, 'item::<item>': minutes }
+let KDS_STANDARDS = {};        // { 'cat::<category>': minutes, 'item::<item>': minutes } -- user-set overrides
 let KDS_COL_MAP = {};
-const KDS_DEFAULT_STANDARD = 10;   // minutes, used until a target is set
+const KDS_DEFAULT_STANDARD = 10;   // minutes, used only when neither a user target nor a reference-sheet target exists
+
+// Real target prep times supplied for 7 Midway Plaza Suryapet (from the restaurant's own
+// "Idel Preparation Time" reference sheet): [item name, target minutes, category, department].
+// Used as the default target whenever the person hasn't set their own -- an item-level
+// user override always wins over this, and this always wins over the flat 10-minute fallback.
+const KDS_REFERENCE_TARGETS = [
+["Ulavacharu Idly (Chef Spl)",5,"Melting Moments","Breakfast"],
+["Ghee Karam Idly",3,"Melting Moments","Breakfast"],
+["Button idli with sambar",3,"Melting Moments","Breakfast"],
+["Benne Idly",3,"Melting Moments","Breakfast"],
+["Poori- slow cooked Kodi pulusu",5,"Sunrise Symphony","Breakfast"],
+["Dosa -  slow cooked Kodi Pulusu",5,"Sunrise Symphony","Breakfast"],
+["Gaare-  slow cooked Kodi Pulusu",5,"Sunrise Symphony","Breakfast"],
+["Poori",5,"Sunrise Symphony","Breakfast"],
+["Vanakkam Pongal",3,"Sunrise Symphony","Breakfast"],
+["Mysore Bajji (Freshly made)",5,"Sunrise Symphony","Breakfast"],
+["Medu Vada",5,"Sunrise Symphony","Breakfast"],
+["Tomato Bath (Recommended)",3,"Sunrise Symphony","Breakfast"],
+["Chef Special 77 mm",5,"Handcrafted Magic","Breakfast"],
+["Butta Bellam - Ragi Dosa",5,"Handcrafted Magic","Breakfast"],
+["Butter Masala Dosa",5,"Handcrafted Magic","Breakfast"],
+["MLA Pesarattu (Chef Spl)",5,"Handcrafted Magic","Breakfast"],
+["Uthappam",5,"Handcrafted Magic","Breakfast"],
+["Butter Plain Dosa",5,"Handcrafted Magic","Breakfast"],
+["Ghee Karam Dosa (Recommended)",5,"Handcrafted Magic","Breakfast"],
+["Cheese Dosa",5,"Handcrafted Magic","Breakfast"],
+["Onion Masala Dosa",5,"Handcrafted Magic","Breakfast"],
+["Steam Dosa (Super healthy)",5,"Handcrafted Magic","Breakfast"],
+["Onion Rava Dosa",5,"Handcrafted Magic","Breakfast"],
+["Onion Dosa",5,"Handcrafted Magic","Breakfast"],
+["Masala Dosa",5,"Handcrafted Magic","Breakfast"],
+["Ragi Dosa (Super healthy)",5,"Handcrafted Magic","Breakfast"],
+["Onion Pesarattu",5,"Handcrafted Magic","Breakfast"],
+["Rava Dosa",5,"Handcrafted Magic","Breakfast"],
+["Pesarattu",5,"Handcrafted Magic","Breakfast"],
+["Dosa- The original",5,"Handcrafted Magic","Breakfast"],
+["Panner Butter Masala Dosa",5,"Tiffins","Breakfast"],
+["Chef Special Thali",10,"Thali & Rice","South Indian Thali"],
+["Pandaga Bhojanam",5,"Thali & Rice","South Indian Thali"],
+["Ragi Sankati-Kodi Pulusu",5,"Thali & Rice","South Indian Thali"],
+["Ragi Sankati",3,"Thali & Rice","South Indian Thali"],
+["Jeera Rice",5,"Thali & Rice","North Indian"],
+["Bisi Bele Bath (Recommended)",5,"Thali & Rice","South Indian Thali"],
+["Steam Rice",5,"Thali & Rice","South Indian Thali"],
+["Nuzvidu Perugannam  (Super Healthy)",5,"Thali & Rice","South Indian Thali"],
+["Muntha Perugannam",5,"Thali & Rice","South Indian Thali"],
+["Chef Special Biryani",10,"Biryani","North Indian"],
+["Emperors Biryani (Chef'S Spl)Mutton",5,"Biryani","North Indian"],
+["Royyala Naidu Biryani",5,"Biryani","North Indian"],
+["Ulava Charu Chicken Biryani",5,"Biryani","North Indian"],
+["Bangaraju Gari Spl Chicken Biryani",5,"Biryani","North Indian"],
+["Konaseema Kodi Vepudu Biryani",5,"Biryani","North Indian"],
+["Chicken Lollipop Biryani",5,"Biryani","North Indian"],
+["Nizam'S Chicken Dum Biryani",5,"Biryani","North Indian"],
+["Egg Biryani",5,"Biryani","North Indian"],
+["Ulavacharu Veg Biryani (Recommended)",5,"Biryani","North Indian"],
+["Somayajula Gari Spl Biryani",5,"Biryani","North Indian"],
+["Bhimavaram Royyala Iguru",5,"Nonveg Curries","South Indian Thali"],
+["Gongura Mamsam Kura (Chef'S Spl)",5,"Nonveg Curries","South Indian Thali"],
+["Veta Mamsam Iguru",5,"Nonveg Curries","South Indian Thali"],
+["Telengana Mamsam Kura",5,"Nonveg Curries","South Indian Thali"],
+["Kodi Iguru",5,"Nonveg Curries","South Indian Thali"],
+["Kodi Pulusu With Bone / Boneless",5,"Nonveg Curries","South Indian Thali"],
+["Butter Chicken",5,"North Indian","North Indian"],
+["Kadai Chicken",5,"North Indian","North Indian"],
+["Egg Bhurji",5,"North Indian","North Indian"],
+["Panneer Butter Masala",5,"North Indian","North Indian"],
+["Palak Panner",5,"North Indian","North Indian"],
+["Methi Chaman",5,"North Indian","North Indian"],
+["Kadai Vegetable",5,"North Indian","North Indian"],
+["Tomoto Cashew Curry",5,"North Indian","North Indian"],
+["Dal Fry",5,"North Indian","North Indian"],
+["Butter Naan",5,"Rotis","Tandoor"],
+["Butter Roti",5,"Rotis","Tandoor"],
+["Naan",5,"Rotis","Tandoor"],
+["Roti",5,"Rotis","Tandoor"],
+["Phulka",5,"Rotis","Tandoor"],
+["Chicken 65 (Dry)",5,"Chinese","Chinese"],
+["Chilli Chicken Dry/Wet",5,"Chinese","Chinese"],
+["Chicken Manchurian Dry / Wet",5,"Chinese","Chinese"],
+["Chilli Paneer",5,"Chinese","Chinese"],
+["Chilli Baby Corn",5,"Chinese","Chinese"],
+["Baby Corn Manchurian Dry/Wet",5,"Chinese","Chinese"],
+["Vegetable Manchurian Dry/Wet",5,"Chinese","Chinese"],
+["Chicken Fried Rice",5,"Chinese","Chinese"],
+["Egg Fried Rice",5,"Chinese","Chinese"],
+["Veg Fried Rice",5,"Chinese","Chinese"],
+["Chicken Soft Noodles",5,"Chinese","Chinese"],
+["Egg Soft Noodles",5,"Chinese","Chinese"],
+["Veg Soft Noodles",5,"Chinese","Chinese"],
+["Chole Bhature",5,"South Indian Tiffins","Breakfast"],
+["Sizzling Brownie",10,"Desserts","Pantry"],
+["Apricot Fusion",5,"Desserts","Halwai"],
+["Bobbattu With Jaggery Ice cream",5,"Desserts","Halwai"],
+["Gulab Jamun With Ice Cream",5,"Desserts","Halwai"],
+["Gulab Jamun",5,"Desserts","Halwai"],
+["Mango Lassi",5,"Beverages","Pantry"],
+["Lassi (Sweet/Salt)",5,"Beverages","Pantry"],
+["Sugarcane Juice",5,"Beverages","Pantry"],
+["Pineapple Juice",5,"Beverages","Pantry"],
+["Watermelon Juice",5,"Beverages","Pantry"],
+["Butter Milk",5,"Beverages","Pantry"],
+["Soft Drinks",5,"Beverages","Pantry"],
+["Water Bottle",2,"Beverages","Pantry"],
+["Horlicks/Bournvita/Boost",5,"Beverages","Pantry"],
+["Milk",5,"Beverages","Pantry"],
+["The original Filter Coffee",3,"Beverages","Pantry"],
+["Tea",3,"Beverages","Pantry"]
+];
+function kdsNormName(s){ return String(s||'').toLowerCase().replace(/\s+/g,' ').replace(/[()]/g,'').trim(); }
+const KDS_REF_BY_ITEM = {};      // normalized item name -> {mins, dept, cat}
+const KDS_REF_CAT_MINS = {};     // category -> [minutes...] , averaged below
+KDS_REFERENCE_TARGETS.forEach(([item, mins, cat, dept])=>{
+  const key = kdsNormName(item);
+  if(!(key in KDS_REF_BY_ITEM)) KDS_REF_BY_ITEM[key] = { mins, dept, cat };
+  if(cat){ (KDS_REF_CAT_MINS[cat] = KDS_REF_CAT_MINS[cat] || []).push(mins); }
+});
+const KDS_REF_CAT_AVG = {};      // category -> average of its reference items' target minutes
+Object.keys(KDS_REF_CAT_MINS).forEach(cat=>{
+  const arr = KDS_REF_CAT_MINS[cat];
+  KDS_REF_CAT_AVG[cat] = arr.reduce((a,b)=>a+b,0) / arr.length;
+});
 const KDS_BUCKETS = [
   {key:'fast',   label:'0–5 min',        test:d=>d<5,           color:'green'},
   {key:'mid',    label:'5–10 min',       test:d=>d>=5 && d<=10, color:'yellow'},
@@ -4089,11 +4212,16 @@ function assessKdsConfidence(rawRows, records, col){
 function kdsStandardFor(item, cat){
   if(Object.prototype.hasOwnProperty.call(KDS_STANDARDS, 'item::'+item)) return KDS_STANDARDS['item::'+item];
   if(Object.prototype.hasOwnProperty.call(KDS_STANDARDS, 'cat::'+cat)) return KDS_STANDARDS['cat::'+cat];
+  const refItem = KDS_REF_BY_ITEM[kdsNormName(item)];
+  if(refItem) return refItem.mins;
+  if(cat && (cat in KDS_REF_CAT_AVG)) return KDS_REF_CAT_AVG[cat];
   return KDS_DEFAULT_STANDARD;
 }
 function kdsStandardSource(item, cat){
   if(Object.prototype.hasOwnProperty.call(KDS_STANDARDS, 'item::'+item)) return 'item';
   if(Object.prototype.hasOwnProperty.call(KDS_STANDARDS, 'cat::'+cat)) return 'category';
+  if(KDS_REF_BY_ITEM[kdsNormName(item)]) return 'reference';
+  if(cat && (cat in KDS_REF_CAT_AVG)) return 'reference-category';
   return 'default';
 }
 
