@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: dashboard-backend
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py
+    envVars:
+      - key: ALLOWED_ORIGIN
+        value: "*"   # change to your Vercel URL once you have it, e.g. https://your-app.vercel.app

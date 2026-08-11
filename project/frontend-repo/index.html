@@ -267,7 +267,7 @@ input[type=range]{accent-color:var(--orange);width:120px;}
   <div style="background:linear-gradient(180deg,var(--panel),#111a2a);border:1px solid var(--border);border-radius:20px;padding:44px 40px;max-width:560px;width:100%;box-shadow:var(--shadow);text-align:center;">
     <div style="font-size:40px;margin-bottom:14px;">📊</div>
     <h1 style="font-size:22px;margin-bottom:10px;">7 Midway Plaza · Suryapet</h1>
-    <p style="color:var(--muted);font-size:14px;line-height:1.6;margin-bottom:26px;">Upload this week's guest feedback Excel export (.xlsx). The dashboard will read it, map the survey columns automatically, and build the same Overview, Trends, Service Quality, Food Insights, Steward Performance, Shift &amp; Meal, Table Insights, Guest Voice, and Data Explorer tabs you're used to.</p>
+    <p style="color:var(--muted);font-size:14px;line-height:1.6;margin-bottom:26px;">Upload this week's guest feedback Excel export (.xlsx). The dashboard will read it, map the survey columns automatically, and build the same Overview, Trends, Service Quality, Food Insights, Steward Performance, Shift &amp; Meal, Table Insights, and Guest Voice tabs you're used to.</p>
     <div id="dropZone" style="border:2px dashed var(--border);border-radius:14px;padding:36px 20px;cursor:pointer;transition:.2s;margin-bottom:16px;">
       <div style="font-size:30px;margin-bottom:10px;">⬆</div>
       <div style="color:var(--text);font-weight:700;font-size:14px;">Drag &amp; drop your file here</div>
@@ -851,7 +851,6 @@ const TABS = [
   {id:'tables', label:'Table Insights'},
   {id:'voice', label:'Guest Voice'},
   {id:'flagged', label:'Flagged Comments'},
-  {id:'explorer', label:'Data Explorer'},
 ];
 let currentTab = 'overview';
 const tabNav = document.getElementById('tabNav');
@@ -2490,167 +2489,6 @@ RENDERERS.flagged = (root,data)=>{
   }
 };
 
-/* ---------------- DATA EXPLORER ---------------- */
-let explorerPage = 0;
-const PAGE_SIZE = 40;
-
-/* Shows exactly how the uploaded file was interpreted: which column filled each field,
-   what the column's values actually look like, any header match that was rejected because
-   the data contradicted it, and — where a question was answered in words — the score each
-   answer was given. The word→score mapping is editable, because that judgement changes
-   the numbers and should be the user's to make rather than something buried in the code. */
-const MAPPED_FIELD_LABELS = {
-  speed:'Service Speed', friendly:'Friendliness', checkin:'Mid-Meal Check-In',
-  food:'Food Quality', comfort:'City Comfort', steward:'Steward Name',
-  submitted:'Submitted On', channel:'Channel / Table', shift:'Shift', meal:'Meal',
-  tableType:'Table Type', comments:'Q6 Comments', complaint:'Q1 Comment (service)',
-  goodItems:'Q4 Comment (good)', improveItems:'Q4 Comment (improve)',
-};
-const VALUE_TYPE_LABELS = {
-  rating:'1–10 numbers', ordinal:'worded scale', freetext:'free text', date:'dates',
-  name:'names', phone:'phone numbers', numeric:'numbers', categorical:'repeated values',
-  empty:'empty',
-};
-function renderDetectionPanel(root){
-  const col = LAST_COL_MAP || {};
-  const profiles = col.__profiles || {};
-  const rejected = col.__rejected || {};
-  const scales = col.__ordinalScales || {};
-  const fields = Object.keys(MAPPED_FIELD_LABELS);
-  const matched = fields.filter(f=>col[f]);
-  const missing = fields.filter(f=>!col[f]);
-
-  root.appendChild(el(`<h3 class="section-title">How This File Was Read <span class="section-sub">which column filled each field, and why — check this first if a number looks wrong</span></h3>`));
-
-  root.appendChild(el(`<div class="grid grid-4">
-    ${kpiCard(matched.length+'/'+fields.length,'Fields Matched','to a column in your file',C.teal)}
-    ${kpiCard(Object.keys(scales).length,'Worded Scales Found','answered in words, not numbers',C.orange)}
-    ${kpiCard(Object.keys(rejected).length,'Matches Rejected','header said one thing, data said another',C.red)}
-    ${kpiCard(SEGMENTS_DETECTED,'Column Layouts','different header rows in this sheet',C.purple)}
-  </div>`));
-
-  root.appendChild(el(`<div class="card" style="margin-top:14px;"><div style="overflow-x:auto;"><table class="dtable">
-    <thead><tr><th>Field</th><th>Column used</th><th>Values look like</th><th>How it was found</th></tr></thead>
-    <tbody>${fields.map(f=>{
-      const cName = col[f];
-      const prof = profiles[f];
-      const how = !cName ? '<span style="color:var(--muted2);">not found in this file</span>'
-        : prof && prof.rescued ? '<span style="color:'+C.orange+';">found by its values (header didn’t match)</span>'
-        : 'matched on the header text';
-      return `<tr>
-        <td>${escapeHtml(MAPPED_FIELD_LABELS[f])}</td>
-        <td>${cName?escapeHtml(String(cName)):'<span style="color:var(--muted2);">—</span>'}</td>
-        <td style="color:var(--muted);">${prof?escapeHtml(VALUE_TYPE_LABELS[prof.type]||prof.type):'—'}</td>
-        <td style="font-size:12px;">${how}</td>
-      </tr>`;
-    }).join('')}</tbody></table></div></div>`));
-
-  if(Object.keys(rejected).length){
-    root.appendChild(el(`<div class="card" style="border-left:3px solid ${C.red};margin-top:12px;">
-      <div class="card-title"><span>Header matches that were rejected</span></div>
-      <p style="font-size:12.5px;color:var(--muted);line-height:1.65;">A column whose header looked right but whose contents said otherwise. Rejecting these is deliberate — using them would have put the wrong data into these fields.</p>
-      ${Object.entries(rejected).map(([f,r])=>`<div class="coach-note" style="margin-top:8px;"><b style="color:var(--text)">${escapeHtml(MAPPED_FIELD_LABELS[f]||f)}</b> — the column "<b style="color:var(--text)">${escapeHtml(String(r.column))}</b>" was skipped because it holds <b style="color:var(--text)">${escapeHtml(VALUE_TYPE_LABELS[r.sawType]||r.sawType)}</b>, not ${r.expected.map(x=>VALUE_TYPE_LABELS[x]||x).join(' or ')}.</div>`).join('')}
-    </div>`));
-  }
-
-  if(missing.length){
-    root.appendChild(el(`<div class="card" style="border-left:3px solid ${C.muted2};margin-top:12px;">
-      <p style="font-size:12.5px;color:var(--muted);line-height:1.65;"><b style="color:var(--text)">Not found in this file:</b> ${missing.map(f=>escapeHtml(MAPPED_FIELD_LABELS[f])).join(' · ')}. Anything depending on these shows "—" rather than a made-up number.</p></div>`));
-  }
-
-  // ---- worded answers: show and allow correction of every score --------------------
-  if(Object.keys(scales).length){
-    root.appendChild(el(`<h3 class="section-title">Worded Answers & Their Scores <span class="section-sub">these questions were answered in words — here is the score each answer was given, and you can change any of them</span></h3>`));
-    root.appendChild(el(`<div class="card" style="border-left:3px solid ${C.orange};">
-      <p style="font-size:12.5px;color:var(--muted);line-height:1.65;">Rows answered in words used to score nothing at all and were dropped from every average. They are now converted onto the same 1–10 scale as the numeric questions. The mapping below is inferred from the wording — if you disagree with any score, change it and every figure in the dashboard recalculates.</p>
-    </div>`));
-    root.appendChild(el(`<div id="ordScaleWrap" style="margin-top:12px;"></div>`));
-
-    function drawScales(){
-      const wrap = document.getElementById('ordScaleWrap');
-      wrap.innerHTML = Object.entries(scales).map(([field,scale])=>{
-        const entries = Object.entries(scale).sort((a,b)=>b[1]-a[1]);
-        return `<div class="card" style="margin-bottom:10px;">
-          <div class="card-title"><span>${escapeHtml(MAPPED_FIELD_LABELS[field]||field)} <span class="section-sub">${escapeHtml(String(col[field]||''))}</span></span></div>
-          <div style="overflow-x:auto;"><table class="dtable">
-            <thead><tr><th>Guest answered</th><th>Scored as</th><th>Band</th></tr></thead>
-            <tbody>${entries.map(([val,sc])=>{
-              const band = npsBand(sc);
-              const bandTxt = band==='promoter'?'😊 Promoter':band==='passive'?'😐 Passive':'😟 Detractor';
-              const bandCol = band==='promoter'?C.green:band==='passive'?C.yellow:C.red;
-              return `<tr>
-                <td>"${escapeHtml(val)}"</td>
-                <td><input type="number" min="0" max="10" step="1" class="ord-input" data-field="${escapeHtml(field)}" data-val="${escapeHtml(val)}" value="${sc}" style="width:70px;"> / 10</td>
-                <td style="color:${bandCol};font-weight:700;">${bandTxt}</td>
-              </tr>`;
-            }).join('')}</tbody></table></div>
-        </div>`;
-      }).join('');
-      wrap.querySelectorAll('.ord-input').forEach(inp=>{
-        inp.onchange = ()=>{
-          const f=inp.getAttribute('data-field'), v=inp.getAttribute('data-val');
-          const n=Number(inp.value);
-          if(isNaN(n)) return;
-          scales[f][v]=Math.max(0,Math.min(10,n));
-          // Re-derive every record from the raw rows so the change flows through the
-          // whole dashboard, not just this table.
-          if(typeof RAW_ROWS_BY_SHEET!=='undefined' && RAW_ROWS_BY_SHEET[CURRENT_SHEET_NAME]){
-            const remapped = mapRowsToRecords(RAW_ROWS_BY_SHEET[CURRENT_SHEET_NAME], scales);
-            SHEET_DATA[CURRENT_SHEET_NAME] = remapped;
-            RECORDS = remapped;
-            invalidateFilterCaches();
-          }
-          drawScales();
-          const badge=document.getElementById('ordChangedNote');
-          if(badge) badge.textContent = 'Scores updated — switch tabs to see the recalculated figures.';
-        };
-      });
-    }
-    drawScales();
-    root.appendChild(el(`<div id="ordChangedNote" class="section-sub" style="margin-top:8px;"></div>`));
-  }
-}
-
-RENDERERS.explorer = (root,data)=>{
-  renderDetectionPanel(root);
-  root.appendChild(el(`<h3 class="section-title">All Responses <span class="section-sub">every row, newest first</span></h3>`));
-  explorerPage = 0;
-  const sorted = [...data].sort((a,b)=> (a.dt+String(a.hr).padStart(2,'0')) < (b.dt+String(b.hr).padStart(2,'0')) ? 1 : -1);
-  function draw(){
-    const start = explorerPage*PAGE_SIZE;
-    const pageRows = sorted.slice(start,start+PAGE_SIZE);
-    let container = document.getElementById('explorerBody');
-    container.innerHTML = `<table class="dtable"><thead><tr><th>Date</th><th>Table</th><th>Steward</th><th>Shift</th><th>Meal</th><th>Speed</th><th>Friendly</th><th>Check-In</th><th>Food</th><th>Comfort</th><th>Comment</th></tr></thead>
-      <tbody>${pageRows.map(r=>`<tr><td>${r.dy}</td><td>${r.tb??'—'}</td><td>${escapeHtml(r.st)}</td><td>${r.sh.replace(' Shift','')}</td><td>${r.ml}</td><td>${r.sp}</td><td>${r.fr}</td><td>${r.ci}</td><td>${r.fd}</td><td>${r.cf}</td><td style="max-width:240px;">${r.cm?escapeHtml(truncate(r.cm,80)):''}</td></tr>`).join('')}</tbody></table>`;
-    document.getElementById('pageInfo').textContent = `Page ${explorerPage+1} of ${Math.max(1,Math.ceil(sorted.length/PAGE_SIZE))} · ${sorted.length} rows`;
-    document.getElementById('prevBtn').disabled = explorerPage===0;
-    document.getElementById('nextBtn').disabled = start+PAGE_SIZE>=sorted.length;
-  }
-  root.appendChild(el(`<div class="card">
-    <div class="card-title">Filtered Raw Responses <span style="display:flex;gap:8px;align-items:center;"><button class="pager-btn" id="exportCsvBtn" style="background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:9px;padding:7px 14px;cursor:pointer;font-size:12px;font-weight:700;">⬇ Export CSV</button><span class="section-sub">most recent first</span></span></div>
-    <div id="explorerBody" class="scroll-list"></div>
-    <div class="pager"><button id="prevBtn">← Prev</button><span id="pageInfo" style="color:var(--muted);font-size:12px;"></span><button id="nextBtn">Next →</button></div>
-  </div>`));
-  document.getElementById('prevBtn').onclick = ()=>{ if(explorerPage>0){ explorerPage--; draw(); } };
-  document.getElementById('nextBtn').onclick = ()=>{ if((explorerPage+1)*PAGE_SIZE<sorted.length){ explorerPage++; draw(); } };
-  document.getElementById('exportCsvBtn').onclick = ()=>{ exportCSV(sorted); };
-  draw();
-};
-
-function exportCSV(rows){
-  const headers = ['Date','Table','Steward','Shift','Meal','Speed','Friendly','CheckIn','Food','Comfort','Comment'];
-  const csvEscape = (v)=>{ const s = String(v==null?'':v); return /[,"\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
-  const lines = [headers.join(',')];
-  rows.forEach(r=>{
-    lines.push([r.dt,r.tb??'',r.st,r.sh,r.ml,r.sp,r.fr,r.ci,r.fd,r.cf,r.cm||''].map(csvEscape).join(','));
-  });
-  const blob = new Blob([lines.join('\n')], {type:'text/csv;charset=utf-8;'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = 'guest_feedback_filtered.csv';
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
 
 /* =========================================================
    INIT (called once data is available, from upload or from a saved snapshot)
@@ -4682,8 +4520,7 @@ let LAST_COL_MAP = {};
    words ("Did our steward take your order within 3 to 5 minutes of seating?"). Both are
    listed so a file spanning the change is read correctly throughout. The earlier survey
    had no friendliness question at all; that field is left unmatched rather than being
-   filled from a question that measured something else, and the dashboard shows "—" for it.
-   The Data Explorer tab shows which question text ended up in which field. */
+   filled from a question that measured something else, and the dashboard shows "—" for it. */
 const FIELD_PATTERN_LIST = [
   ['speed', ['how quick was your service','quick was your service',
              'take your order within','order within 3 to 5','served without any delay','without any delay','speed']],
@@ -4699,7 +4536,9 @@ const FIELD_PATTERN_LIST = [
                      'could be improved','what could be improved','needs improvement','room for improvement',
                      'what should we improve','areas to improve']],
   ['comments', ['additional comments','suggestions']],
-  ['complaint', ['did not meet your expectation','sorry the service']],
+  ['complaint', ['did not meet your expectation','sorry the service','sorry that the service','sorry your service',
+                 'sorry for the service','what happened','tell us what happened','service concern',
+                 'service issue','what went wrong']],
   ['channel', ['channel name','channel']],
   ['submitted', ['submitted on','submitted']],
   ['steward', ['steward name','name of the steward','waiter name','server name','staff name','served by','attended by','table steward','steward']],
