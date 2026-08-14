@@ -4,28 +4,37 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>7 Midway Plaza Suryapet — Weekly Guest Feedback Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#0c223f; --bg2:#0a1c35; --panel:#132451; --panel-hover:#16295c; --border:#2a3d6b; --border-soft:#1c2e5a;
-  --text:#eef2fa; --muted:#b8c5e1; --muted2:#7f8fb3;
+  --bg:#0a1d38; --bg2:#081930; --panel:#132451; --panel-hover:#182a5c; --border:#2a3d6b; --border-soft:#1c2e5a;
+  --text:#f3f6fc; --muted:#b8c5e1; --muted2:#8091b3;
   --orange:#f4b183; --teal:#2dd9a8; --purple:#a78bfa; --red:#e06666; --green:#a8d18d; --blue:#4ea8f2; --yellow:#f7c267;
   --radius:16px; --radius-sm:10px;
-  --shadow:0 10px 30px rgba(0,0,0,.4);
-  --shadow-sm:0 4px 14px rgba(0,0,0,.3);
+  --shadow:0 16px 40px rgba(3,8,20,.5), 0 2px 8px rgba(3,8,20,.35);
+  --shadow-sm:0 6px 18px rgba(3,8,20,.35), 0 1px 3px rgba(3,8,20,.3);
+  --ease:cubic-bezier(.4,0,.2,1);
 }
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;}
 body{
   background:
-    radial-gradient(1200px 600px at 10% -10%, #14203a55, transparent),
-    radial-gradient(1000px 500px at 100% 0%, #1a1a3a44, transparent),
+    radial-gradient(1300px 650px at 8% -12%, #1b326a77, transparent),
+    radial-gradient(1100px 550px at 102% -4%, #3a2c6a4a, transparent),
+    radial-gradient(900px 500px at 50% 115%, #0f2a4d55, transparent),
     var(--bg);
-  color:var(--text);font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,Roboto,Helvetica,Arial,sans-serif;
+  background-attachment:fixed;
+  color:var(--text);font-family:'Plus Jakarta Sans','Segoe UI',-apple-system,BlinkMacSystemFont,Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
   min-height:100vh;
 }
-h1,h2,h3,h4{margin:0;font-weight:700;}
+h1,h2,h3,h4{margin:0;font-weight:700;letter-spacing:-0.01em;}
 p{margin:0;}
 button{font-family:inherit;}
+*:focus-visible{outline:2px solid var(--orange);outline-offset:2px;border-radius:4px;}
+@media (prefers-reduced-motion: reduce){ *{animation-duration:.001ms !important;transition-duration:.001ms !important;} }
 ::-webkit-scrollbar{width:9px;height:9px;}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:#2a3852;border-radius:8px;}
@@ -35,7 +44,7 @@ button{font-family:inherit;}
 .topbar{position:sticky;top:0;z-index:70;background:linear-gradient(180deg,#0e1524f2,#0e1524e6);backdrop-filter:blur(10px);border-bottom:1px solid var(--border);padding:16px 26px 14px;}
 .topbar-row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;}
 .brand{display:flex;align-items:center;gap:12px;}
-.brand-mark{width:42px;height:42px;border-radius:11px;background:linear-gradient(135deg,var(--orange),#c97a10);display:flex;align-items:center;justify-content:center;font-weight:800;color:#0a0f1a;font-size:16px;flex:0 0 auto;box-shadow:0 4px 14px #f5a62344;}
+.brand-mark{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--orange),#c97a10);display:flex;align-items:center;justify-content:center;font-weight:800;color:#0a0f1a;font-size:16px;flex:0 0 auto;box-shadow:0 5px 16px #f5a62348, inset 0 1px 0 #ffffff33;}
 .brand .name{color:var(--text);font-weight:800;font-size:17px;letter-spacing:.01em;}
 .rename-btn{background:none;border:none;cursor:pointer;font-size:13px;padding:3px 5px;border-radius:6px;opacity:.55;transition:.15s;line-height:1;}
 .rename-btn:hover{opacity:1;background:#ffffff10;}
@@ -73,13 +82,24 @@ button{font-family:inherit;}
 .filter-opt input{accent-color:var(--orange);width:14px;height:14px;}
 .filter-actions{display:flex;justify-content:space-between;margin-top:9px;border-top:1px solid var(--border);padding-top:9px;}
 .filter-actions button{background:none;border:none;color:var(--muted);font-size:11.5px;cursor:pointer;font-weight:600;}
+.sheet-group-heading{font-size:10.5px;color:var(--muted2);text-transform:uppercase;letter-spacing:.06em;font-weight:700;padding:9px 6px 5px;}
+.sheet-group-heading:first-child{padding-top:2px;}
+.sheet-opt{display:flex;align-items:center;gap:10px;padding:9px 8px;cursor:pointer;border-radius:9px;transition:background .12s;}
+.sheet-opt:hover{background:#1c2a40;}
+.sheet-opt.active{background:#f5a62316;}
+.sheet-opt-icon{font-size:16px;flex-shrink:0;}
+.sheet-opt-body{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;}
+.sheet-opt-name{font-size:12.5px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sheet-opt-meta{font-size:11px;color:var(--muted2);}
+.sheet-opt-check{color:var(--orange);font-weight:800;font-size:13px;flex-shrink:0;}
 .filter-actions button:hover{color:var(--orange);}
 .reset-btn{background:transparent;border:1px dashed var(--border);color:var(--muted);border-radius:10px;padding:9px 14px;font-size:12.5px;cursor:pointer;font-weight:600;}
-.action-btn{background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:9px 15px;font-size:12.5px;cursor:pointer;font-weight:700;display:inline-flex;align-items:center;gap:7px;transition:.15s;white-space:nowrap;}
+.action-btn{background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:9px 15px;font-size:12.5px;cursor:pointer;font-weight:700;display:inline-flex;align-items:center;gap:7px;transition:.18s var(--ease);white-space:nowrap;}
 select#sheetSelector{-webkit-appearance:menulist;appearance:menulist;font-weight:600;max-width:220px;}
-.action-btn:hover{border-color:var(--orange);color:var(--orange);}
-.action-btn.primary{background:linear-gradient(135deg,var(--orange),#c97a10);border:none;color:#0a0f1a;}
-.action-btn.primary:hover{filter:brightness(1.08);color:#0a0f1a;}
+.action-btn:hover{border-color:var(--orange);color:var(--orange);background:var(--panel-hover);transform:translateY(-1px);}
+.action-btn:active{transform:translateY(0);}
+.action-btn.primary{background:linear-gradient(135deg,var(--orange),#c97a10);border:none;color:#0a0f1a;box-shadow:0 4px 14px #f5a62333;}
+.action-btn.primary:hover{filter:brightness(1.08);color:#0a0f1a;box-shadow:0 6px 18px #f5a62344;}
 #dropZone:hover, #dropZone.dragover{border-color:var(--orange);background:#f5a62310;}
 .swatch-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text);}
 .swatch-row input[type=color]{width:30px;height:30px;border:1px solid var(--border);border-radius:7px;padding:0;background:none;cursor:pointer;flex:0 0 auto;}
@@ -101,30 +121,30 @@ select#sheetSelector{-webkit-appearance:menulist;appearance:menulist;font-weight
 
 /* ---------- Tabs ---------- */
 .tabnav{display:flex;gap:2px;padding:0 26px;background:#0d1526;border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:thin;}
-.tabbtn{background:none;border:none;color:var(--muted);padding:14px 17px;font-size:13px;cursor:pointer;white-space:nowrap;border-bottom:2.5px solid transparent;font-weight:600;transition:.15s;}
-.tabbtn:hover{color:var(--text);background:#ffffff06;}
+.tabbtn{background:none;border:none;color:var(--muted);padding:14px 17px;font-size:13px;cursor:pointer;white-space:nowrap;border-bottom:2.5px solid transparent;font-weight:600;transition:.18s var(--ease);}
+.tabbtn:hover{color:var(--text);background:#ffffff08;}
 .tabbtn.active{color:var(--orange);border-bottom-color:var(--orange);}
 
 /* ---------- Main content ---------- */
-.content{padding:28px 26px 60px;max-width:1560px;margin:0 auto;}
+.content{padding:30px 26px 64px;max-width:1560px;margin:0 auto;}
 .grid{display:grid;gap:16px;}
 .grid-2{grid-template-columns:repeat(2,1fr);}
 .grid-3{grid-template-columns:repeat(3,1fr);}
 .grid-4{grid-template-columns:repeat(4,1fr);}
 .grid-5{grid-template-columns:repeat(5,1fr);}
 .grid-6{grid-template-columns:repeat(6,1fr);}
-.card{background:linear-gradient(180deg,var(--panel),#111a2a);border:1px solid var(--border);border-radius:var(--radius);padding:19px 21px;box-shadow:var(--shadow-sm);}
+.card{background:linear-gradient(180deg,var(--panel),#111a2a);border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px;box-shadow:var(--shadow-sm);transition:border-color .18s var(--ease),box-shadow .18s var(--ease);}
 .card-title{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:15px;font-weight:700;display:flex;align-items:center;justify-content:space-between;}
-.section-title{font-size:19px;margin:28px 0 14px;color:var(--text);display:flex;align-items:center;gap:10px;}
-.section-title::before{content:'';width:4px;height:18px;background:var(--orange);border-radius:3px;display:inline-block;}
+.section-title{font-size:19.5px;margin:32px 0 15px;color:var(--text);display:flex;align-items:center;gap:11px;font-weight:800;letter-spacing:-0.015em;}
+.section-title::before{content:'';width:4px;height:19px;background:linear-gradient(180deg,var(--orange),#c97a10);border-radius:3px;display:inline-block;}
 .section-title:first-child{margin-top:0;}
-.section-sub{color:var(--muted);font-size:12.5px;font-weight:400;margin-left:2px;}
+.section-sub{color:var(--muted);font-size:12.5px;font-weight:400;margin-left:2px;letter-spacing:0;}
 
-.kpi{background:linear-gradient(160deg,var(--panel),#101828);border:1px solid var(--border);border-radius:var(--radius);padding:17px 16px;text-align:center;position:relative;overflow:hidden;transition:.2s;}
+.kpi{background:linear-gradient(160deg,var(--panel),#101828);border:1px solid var(--border);border-radius:var(--radius);padding:18px 17px;text-align:center;position:relative;overflow:hidden;transition:.22s var(--ease);}
 .kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--accent,var(--orange));}
-.kpi:hover{border-color:#3a4a6a;transform:translateY(-1px);}
+.kpi:hover{border-color:#3a4a6a;transform:translateY(-2px);box-shadow:var(--shadow-sm);}
 .kpi.kpi-clickable{cursor:pointer;}
-.kpi.kpi-clickable:hover{border-color:var(--orange);box-shadow:0 6px 18px #f5a62322;}
+.kpi.kpi-clickable:hover{border-color:var(--orange);box-shadow:0 8px 22px #f5a62328;}
 .kpi.kpi-clickable:focus{outline:2px solid var(--orange);outline-offset:2px;}
 .kpi-hint{color:var(--muted2);font-size:9.5px;margin-top:6px;letter-spacing:.03em;opacity:.75;}
 .kpi.kpi-clickable:hover .kpi-hint{color:var(--orange);opacity:1;}
@@ -141,7 +161,7 @@ select#sheetSelector{-webkit-appearance:menulist;appearance:menulist;font-weight
 .breakdown-table th{text-align:left;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:7px 9px;border-bottom:1px solid var(--border);}
 .breakdown-table td{padding:6px 9px;border-bottom:1px solid var(--border-soft);}
 .breakdown-table tr:last-child td{border-bottom:none;}
-.kpi .val{font-size:27px;font-weight:800;line-height:1.1;}
+.kpi .val{font-size:28px;font-weight:800;line-height:1.1;letter-spacing:-0.02em;}
 .calc-step{border-left:3px solid var(--border);padding:4px 0 4px 14px;margin-bottom:14px;}
 .calc-step .step-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--orange);font-weight:800;margin-bottom:4px;}
 .calc-step .step-formula{font-family:'JetBrains Mono',Consolas,monospace;font-size:12.5px;color:var(--teal);background:#0d1526;padding:8px 10px;border-radius:7px;margin:6px 0;display:block;}
@@ -161,12 +181,13 @@ select#sheetSelector{-webkit-appearance:menulist;appearance:menulist;font-weight
 .chart-wrap.tall{height:380px;}
 
 table.dtable{width:100%;border-collapse:collapse;font-size:12.5px;}
-table.dtable th{text-align:left;color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;padding:9px 11px;border-bottom:1.5px solid var(--border);font-weight:700;position:sticky;top:0;background:#141d30;cursor:pointer;user-select:none;white-space:nowrap;}
+table.dtable th{text-align:left;color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;padding:10px 11px;border-bottom:1.5px solid var(--border);font-weight:700;position:sticky;top:0;background:#141d30;cursor:pointer;user-select:none;white-space:nowrap;transition:color .15s var(--ease);}
 table.dtable th:hover{color:var(--orange);}
 table.dtable th.sorted::after{content:' ▾';color:var(--orange);}
 table.dtable th.sorted.asc::after{content:' ▴';}
-table.dtable td{padding:8.5px 11px;border-bottom:1px solid var(--border-soft);color:var(--text);}
-table.dtable tr:hover td{background:#ffffff06;}
+table.dtable td{padding:9px 11px;border-bottom:1px solid var(--border-soft);color:var(--text);}
+table.dtable tr{transition:background .12s var(--ease);}
+table.dtable tr:hover td{background:#ffffff08;}
 .badge{padding:3px 9px;border-radius:20px;font-size:10.5px;font-weight:700;display:inline-block;}
 .badge.green{background:#34d38f26;color:var(--green);}
 .badge.yellow{background:#f2cb4e26;color:var(--yellow);}
@@ -176,7 +197,7 @@ table.dtable tr:hover td{background:#ffffff06;}
 .rank-pill.silver{background:linear-gradient(135deg,#cfd8e3,#98a6b8);color:#233043;}
 .rank-pill.bronze{background:linear-gradient(135deg,#d99a5f,#a3652f);color:#2e1b09;}
 
-.comment{background:#0f1830;border:1px solid var(--border);border-radius:12px;padding:12px 15px;margin-bottom:9px;font-size:13px;line-height:1.5;border-left:3px solid var(--teal);}
+.comment{background:#0f1830;border:1px solid var(--border);border-radius:12px;padding:13px 16px;margin-bottom:9px;font-size:13px;line-height:1.55;border-left:3px solid var(--teal);transition:border-color .15s var(--ease);}
 .comment.neg{border-left-color:var(--red);}
 .comment.passive{border-left-color:var(--yellow);background:#f2cb4e0d;}
 .passive-group{border-color:#f2cb4e55;box-shadow:0 0 0 1px #f2cb4e22;}
@@ -270,10 +291,10 @@ input[type=range]{accent-color:var(--orange);width:120px;}
     <p style="color:var(--muted);font-size:14px;line-height:1.6;margin-bottom:26px;">Upload this week's guest feedback Excel export (.xlsx). The dashboard will read it, map the survey columns automatically, and build the same Overview, Trends, Service Quality, Food Insights, Steward Performance, Shift &amp; Meal, Table Insights, and Guest Voice tabs you're used to.</p>
     <div id="dropZone" style="border:2px dashed var(--border);border-radius:14px;padding:36px 20px;cursor:pointer;transition:.2s;margin-bottom:16px;">
       <div style="font-size:30px;margin-bottom:10px;">⬆</div>
-      <div style="color:var(--text);font-weight:700;font-size:14px;">Drag &amp; drop your file here</div>
-      <div style="color:var(--muted2);font-size:12px;margin-top:4px;">or click to browse</div>
+      <div style="color:var(--text);font-weight:700;font-size:14px;">Drag &amp; drop your file(s) here</div>
+      <div style="color:var(--muted2);font-size:12px;margin-top:4px;">or click to browse — you can select multiple files at once</div>
     </div>
-    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" hidden>
+    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" multiple hidden>
     <button id="browseBtn" class="action-btn primary" style="padding:12px 26px;font-size:14px;">Choose File</button>
     <div id="uploadStatus" style="display:none;margin-top:16px;color:var(--teal);font-size:13px;font-weight:600;align-items:center;justify-content:center;gap:9px;">
       <span class="upload-spinner"></span><span id="uploadStatusText"></span>
@@ -299,9 +320,9 @@ input[type=range]{accent-color:var(--orange);width:120px;}
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-      <div id="sheetSelectorWrap" style="display:none;align-items:center;gap:6px;">
-        <span style="font-size:11px;color:var(--muted);">📑 Sheet:</span>
-        <select id="sheetSelector" class="action-btn" style="cursor:pointer;"></select>
+      <div id="sheetSelectorWrap" style="display:none;position:relative;">
+        <button class="action-btn" id="sheetSelectorBtn" style="cursor:pointer;">📑 <span id="sheetSelectorLabel">Sheet</span></button>
+        <div id="sheetSelectorPanel" class="filter-panel" style="min-width:300px;"></div>
       </div>
       <button class="action-btn" id="newFileBtn">📁 New File</button>
       <div style="position:relative;">
@@ -631,12 +652,13 @@ function updateHeaderRange(){
   // user should still be told, since it means part of the file used a different layout,
   // not just have that silently absorbed with no trace.
   const segmentTag = SEGMENTS_DETECTED>1 ? ` · ${SEGMENTS_DETECTED} column layouts detected in this sheet & auto-reconciled` : '';
+  const dupTag = GUEST_MERGED_DUP_COUNT>0 ? ` · ${GUEST_MERGED_DUP_COUNT.toLocaleString()} duplicate response${GUEST_MERGED_DUP_COUNT===1?'':'s'} merged` : '';
   if(dates.length){
     const start = RECORDS.find(r=>r.dt===dates[0]).dy;
     const end = RECORDS.find(r=>r.dt===dates[dates.length-1]).dy;
-    document.getElementById('headerSub').textContent = `Weekly Guest Feedback Dashboard — ${start} to ${end}, 2026${sheetTag}${segmentTag}`;
+    document.getElementById('headerSub').textContent = `Weekly Guest Feedback Dashboard — ${start} to ${end}, 2026${sheetTag}${segmentTag}${dupTag}`;
   } else {
-    document.getElementById('headerSub').textContent = `Weekly Guest Feedback Dashboard${sheetTag}${segmentTag}`;
+    document.getElementById('headerSub').textContent = `Weekly Guest Feedback Dashboard${sheetTag}${segmentTag}${dupTag}`;
   }
 }
 
@@ -947,6 +969,23 @@ function groupBy(arr, keyFn){
   const m = new Map();
   arr.forEach(r=>{ const k = keyFn(r); if(!m.has(k)) m.set(k,[]); m.get(k).push(r); });
   return m;
+}
+// Collapses rows that are exact duplicates of each other (same underlying line accidentally
+// exported twice) down to a single row, so they don't inflate revenue/order counts. Only
+// rows whose full signature (via keyFn) matches exactly are merged — a row that differs in
+// even one field is treated as genuinely distinct data, not a duplicate. Returns both the
+// deduped array and how many rows were dropped, so callers can surface that count.
+function mergeExactDuplicates(records, keyFn){
+  const seen = new Set();
+  const out = [];
+  let mergedCount = 0;
+  records.forEach(r=>{
+    const k = keyFn(r);
+    if(seen.has(k)){ mergedCount++; return; }
+    seen.add(k);
+    out.push(r);
+  });
+  return { records: out, mergedCount };
 }
 function kpiCard(val,label,sub,color,breakdownKey,valColor){
   const clickable = breakdownKey ? ' kpi-clickable" data-breakdown-key="'+breakdownKey+'" data-breakdown-label="'+escapeHtml(label)+'" tabindex="0" role="button" aria-haspopup="dialog' : '';
@@ -2374,8 +2413,24 @@ function findMisspellings(text){
   words.forEach(w=>{ if(COMMON_MISSPELLINGS[w]) found.add(w); });
   return [...found];
 }
+/* Duplicate / near-identical comment detection — catches the case where comments
+   have NO spelling difference at all (not even punctuation/capitalization) and are
+   tied to the same steward. Normalizes away case, punctuation and extra whitespace
+   before comparing, so "Great service!!" and "great service" count as the same text.
+   Every repeat is flagged, including short ones like "Good" or "Nice" said twice
+   by the same steward — length is not used to filter anything out here. */
+function normalizeComment(text){
+  return String(text).toLowerCase().replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim();
+}
+// A comment containing an emoji is treated as a genuine, personalized write-in rather
+// than a possible copy-paste or fabricated duplicate — emoji get stripped out entirely by
+// normalizeComment above, so without this check two comments that only differ by an emoji
+// (e.g. "Great service!" vs "Great service! 😊") would wrongly collapse into one duplicate.
+function commentHasEmoji(text){
+  return /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{1F1E6}-\u{1F1FF}\u{FE0F}]/u.test(String(text||''));
+}
 function computeFlaggedClusters(data){
-  const withComments = data.filter(r=>r.cm);
+  const withComments = data.filter(r=>r.cm && !commentHasEmoji(r.cm));
   // key = steward + '||' + misspelled word  →  list of distinct rows using that word
   const clusters = new Map();
   withComments.forEach(r=>{
@@ -2394,12 +2449,10 @@ function computeFlaggedClusters(data){
    tied to the same steward. Normalizes away case, punctuation and extra whitespace
    before comparing, so "Great service!!" and "great service" count as the same text.
    Every repeat is flagged, including short ones like "Good" or "Nice" said twice
-   by the same steward — length is not used to filter anything out here. */
-function normalizeComment(text){
-  return String(text).toLowerCase().replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim();
-}
+   by the same steward — length is not used to filter anything out here. Comments
+   containing an emoji are excluded up front (see commentHasEmoji above). */
 function computeDuplicateClusters(data){
-  const withComments = data.filter(r=>r.cm);
+  const withComments = data.filter(r=>r.cm && !commentHasEmoji(r.cm));
   const groups = new Map(); // key = steward + '||' + normalizedText
   withComments.forEach(r=>{
     const norm = normalizeComment(r.cm);
@@ -2418,7 +2471,7 @@ function computeDuplicateClusters(data){
    normalized, e.g. "good", "nice") are excluded since they'd trivially recur
    without being a meaningful pattern. */
 function computeRecurringComments(data){
-  const withComments = data.filter(r=>r.cm);
+  const withComments = data.filter(r=>r.cm && !commentHasEmoji(r.cm));
   const groups = new Map();
   withComments.forEach(r=>{
     const norm = normalizeComment(r.cm);
@@ -2532,9 +2585,9 @@ dropZone.addEventListener('dragover', (e)=>{ e.preventDefault(); dropZone.classL
 dropZone.addEventListener('dragleave', ()=>dropZone.classList.remove('dragover'));
 dropZone.addEventListener('drop', (e)=>{
   e.preventDefault(); dropZone.classList.remove('dragover');
-  if(e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+  if(e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
 });
-fileInput.addEventListener('change', (e)=>{ if(e.target.files.length) handleFile(e.target.files[0]); });
+fileInput.addEventListener('change', (e)=>{ if(e.target.files.length) handleFiles(e.target.files); });
 
 document.getElementById('newFileBtn').addEventListener('click', ()=>{
   document.getElementById('app').style.display = 'none';
@@ -2549,6 +2602,7 @@ function showUploadError(msg){ uploadError.textContent = msg; uploadError.style.
 function showUploadStatus(msg){ document.getElementById('uploadStatusText').textContent = msg; uploadStatus.style.display = 'flex'; uploadError.style.display = 'none'; }
 
 let SOURCE_FILENAME = '';
+let SHEET_SOURCE_FILE = {};   // { qualifiedSheetName: originalFileName } — only populated on a multi-file upload
 let CUSTOM_BRAND_NAME = null; // user-set override; null means "derive automatically from the data"
 let SHEET_DATA = {};          // { sheetName: recordsArray } — one independent dashboard per usable sheet
 let SHEET_MODE = {};          // { sheetName: 'guest_feedback' | 'generic' }
@@ -2798,9 +2852,94 @@ async function processWorkbookOnMainThread(arrayBuffer){
   await finishMappingSheets(parsedSheets);
 }
 
+// Promise-based single-file browser parse — used by handleFiles below when uploading
+// several files at once, since that needs to await each file's sheets in turn rather than
+// the callback style attemptUpload uses for the single-file path (left untouched so nothing
+// about the existing single-file flow changes).
+function parseFileInBrowser(file){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onerror = ()=> reject(new Error('Could not read ' + file.name));
+    reader.onload = (e)=>{
+      try{
+        if(!window.XLSX){ reject(new Error('The Excel-reading library failed to load.')); return; }
+        const arrayBuffer = e.target.result;
+        const worker = (typeof Worker!=='undefined') ? getUploadWorker() : null;
+        if(!worker){
+          try{
+            const wb = XLSX.read(new Uint8Array(arrayBuffer), {type:'array', cellDates:true, cellStyles:false, cellText:false, sheetStubs:false, bookDeps:false, bookFiles:false, bookProps:false, bookVBA:false, cellFormula:false, cellHTML:false, dense:true});
+            const parsedSheets = wb.SheetNames.map(sheetName=>{
+              const ws = wb.Sheets[sheetName];
+              const range = ws['!ref'] ? XLSX.utils.decode_range(ws['!ref']) : null;
+              const approxRowCount = range ? (range.e.r - range.s.r + 1) : 0;
+              const rowsArray = (approxRowCount>0 && approxRowCount<=RATING_SHEET_MAX_ROWS) ? XLSX.utils.sheet_to_json(ws, {header:1, defval:null, raw:true}) : null;
+              const rawRows = robustSheetToRows(ws).rawRows;
+              return {sheetName, rowsArray, rawRows};
+            });
+            resolve(parsedSheets);
+          }catch(err){ reject(err); }
+          return;
+        }
+        const parsedSheets = [];
+        let settled = false;
+        worker.onmessage = (ev)=>{
+          const msg = ev.data;
+          if(msg.type==='sheet') parsedSheets.push(msg);
+          else if(msg.type==='done'){ if(settled) return; settled=true; worker.onmessage=null; worker.onerror=null; resolve(parsedSheets); }
+          else if(msg.type==='error'){ if(settled) return; settled=true; worker.onmessage=null; worker.onerror=null; reject(new Error(msg.message)); }
+        };
+        worker.onerror = (werr)=>{ if(settled) return; settled=true; reject(new Error('Background parsing failed for ' + file.name)); };
+        try{ worker.postMessage(arrayBuffer, [arrayBuffer]); }
+        catch(postErr){ worker.postMessage(arrayBuffer); }
+      }catch(err){ reject(err); }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+// Entry point for both drag-and-drop and the file picker. A single file goes through the
+// existing, well-tested handleFile path unchanged. Multiple files are read one at a time —
+// via the backend when available, the in-browser parser otherwise — and every sheet from
+// every file is combined into one dashboard, with each sheet's name prefixed by which file
+// it came from so two files can never collide and it's always clear where a sheet is from.
+async function handleFiles(fileList){
+  const files = Array.from(fileList);
+  if(files.length <= 1){ if(files.length===1) handleFile(files[0]); return; }
+  uploadError.style.display = 'none';
+  SOURCE_FILENAME = files.map(f=>f.name).join(', ');
+  SHEET_SOURCE_FILE = {};
+  let combined = [];
+  let failures = [];
+  for(let i=0;i<files.length;i++){
+    const f = files[i];
+    showUploadStatus(`Reading file ${i+1} of ${files.length}: ${f.name}…`);
+    await yieldToUI();
+    let sheets;
+    try{
+      sheets = BACKEND.available ? await gatherParsedSheetsViaBackend(f) : await parseFileInBrowser(f);
+    }catch(err){
+      console.error('Failed to parse', f.name, err);
+      failures.push(f.name);
+      continue;
+    }
+    sheets.forEach(s=>{
+      const qualifiedName = `${f.name} — ${s.sheetName}`;
+      SHEET_SOURCE_FILE[qualifiedName] = f.name;
+      combined.push({...s, sheetName: qualifiedName});
+    });
+  }
+  if(!combined.length){
+    showUploadError('None of the selected files could be read' + (failures.length ? ': ' + failures.join(', ') : '.'));
+    return;
+  }
+  if(failures.length) showUploadStatus(`${failures.length} file(s) could not be read and were skipped: ${failures.join(', ')} — continuing with the rest…`);
+  await finishMappingSheets(combined);
+}
+
 function handleFile(file){
   uploadError.style.display = 'none';
   SOURCE_FILENAME = file.name;
+  SHEET_SOURCE_FILE = {};
   if(BACKEND.available){
     processWorkbookViaBackend(file).catch(err=>{
       // If the server dies mid-upload, fall back to parsing in the browser rather than
@@ -2887,18 +3026,24 @@ async function backendFetchSheet(index){
    difference between a few seconds and a minute or more. */
 async function processWorkbookViaBackend(file){
   showUploadStatus('Sending ' + file.name + ' to the local server…');
+  const parsedSheets = await gatherParsedSheetsViaBackend(file);
+  await finishMappingSheets(parsedSheets);
+}
+// Same work processWorkbookViaBackend does, minus the final finishMappingSheets call —
+// split out so a multi-file upload can gather every file's sheets first and combine them
+// into one dashboard, instead of each file wiping out the one before it.
+async function gatherParsedSheetsViaBackend(file){
   const info = await backendUpload(file);
   const names = info.sheets || [];
-  if(!names.length) throw new Error('No sheets found in that file.');
-
+  if(!names.length) throw new Error('No sheets found in ' + file.name);
   const parsedSheets = [];
   for(let i=0;i<names.length;i++){
-    showUploadStatus(`Reading sheet ${i+1} of ${names.length}: ${names[i]}…`);
+    showUploadStatus(`Reading sheet ${i+1} of ${names.length} in ${file.name}: ${names[i]}…`);
     await yieldToUI();
     const s = await backendFetchSheet(i);
     parsedSheets.push({sheetName: s.sheetName, rawRows: s.rawRows || [], rowsArray: s.rowsArray || null});
   }
-  await finishMappingSheets(parsedSheets);
+  return parsedSheets;
 }
 
 // isRetry=true means a previous worker attempt failed and this is parsing on the main thread
@@ -3370,7 +3515,8 @@ function renderKdsSheet(sheetName){
   root.appendChild(el(`<div class="card" style="border-left:3px solid ${C.teal};margin-bottom:16px;">
     <p style="font-size:12.5px;color:var(--muted);line-height:1.7;">🍳 <b style="color:var(--text)">Kitchen Display System view</b> — prep time is measured from the order timestamp to the delivery timestamp on each row.
     ${timed.length < records.length ? `<b style="color:var(--text)">${(records.length-timed.length).toLocaleString()}</b> of ${records.length.toLocaleString()} rows had no usable pair of timestamps (blank, or a delivery time before the order beyond what a midnight rollover explains) and are excluded from every timing figure below — they still count toward demand.` : 'Every row produced a usable prep time.'}
-    ${hasDept ? '' : ' <b style="color:var(--text)">No department column was found</b>, so category is used as the operational unit — add a department/station column and this view will group by it automatically.'}</p>
+    ${hasDept ? '' : ' <b style="color:var(--text)">No department column was found</b>, so category is used as the operational unit — add a department/station column and this view will group by it automatically.'}
+    ${KDS_MERGED_DUP_COUNT ? ` <b style="color:var(--text)">${KDS_MERGED_DUP_COUNT.toLocaleString()} exact-duplicate row${KDS_MERGED_DUP_COUNT===1?'':'s'}</b> (same item, time, category, department, table and steward) ${KDS_MERGED_DUP_COUNT===1?'was':'were'} merged into ${KDS_MERGED_DUP_COUNT===1?'its original row':'their original rows'} so they don't double-count.` : ''}</p>
     <div class="colmeta-row" style="margin-top:10px;">${detected.map(([label,c])=>
       `<span class="colmeta-chip">${label}: <b>${c?escapeHtml(String(c)):'—'}</b></span>`).join('')}</div>
   </div>`));
@@ -3614,7 +3760,8 @@ function renderHourlySheet(sheetName){
     ['Date', col.date], ['Hour', col.hour], ['Total', col.total], ['Payment mode', col.paymentMode],
   ];
   root.appendChild(el(`<div class="card" style="border-left:3px solid ${C.blue};margin-bottom:16px;">
-    <p style="font-size:12.5px;color:var(--muted);line-height:1.7;">🧾 <b style="color:var(--text)">Hourly billing/settlement view</b> — each row is one item line from a bill, so totals here are revenue, not kitchen prep time.</p>
+    <p style="font-size:12.5px;color:var(--muted);line-height:1.7;">🧾 <b style="color:var(--text)">Hourly billing/settlement view</b> — each row is one item line from a bill, so totals here are revenue, not kitchen prep time.
+    ${HOURLY_MERGED_DUP_COUNT ? ` <b style="color:var(--text)">${HOURLY_MERGED_DUP_COUNT.toLocaleString()} exact-duplicate line${HOURLY_MERGED_DUP_COUNT===1?'':'s'}</b> (identical item, bill, time and revenue) ${HOURLY_MERGED_DUP_COUNT===1?'was':'were'} merged so revenue isn't double-counted.` : ''}</p>
     <div class="colmeta-row" style="margin-top:10px;">${detected.map(([label,c])=>
       `<span class="colmeta-chip">${label}: <b>${c?escapeHtml(String(c)):'—'}</b></span>`).join('')}</div>
   </div>`));
@@ -3631,16 +3778,60 @@ function renderHourlySheet(sheetName){
     ${kpiCard('₹'+Math.round(totalTax).toLocaleString(),'Total Tax','collected across the period',C.purple)}
   </div>`));
 
-  // ---- revenue by hour ------------------------------------------------------------
+  // ---- revenue by hour (interactive: day-of-week picker + click-a-category) --------------
   const withHour = records.filter(r=>r.hr!=null && r.hr>=0 && r.hr<=23);
+  const DOWN = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  let hourlyDow = null;   // null = all days, else 0-6
+  let hourlyCat = null;   // null = all categories, else a category name
+  let hourlyChart = null;
+  const HOURS = Array.from({length:24},(_,i)=>i);
+
+  function distinctDateCount(dowFilter){
+    const set = new Set();
+    records.forEach(r=>{ if(!r.dt) return; if(dowFilter!=null && r.dow!==dowFilter) return; set.add(r.dt); });
+    return set.size;
+  }
+  function redrawHourlyChart(){
+    const denom = Math.max(1, distinctDateCount(hourlyDow));
+    const matches = withHour.filter(r=>
+      (hourlyDow==null || r.dow===hourlyDow) && (hourlyCat==null || r.cat===hourlyCat));
+    const avgByHour = HOURS.map(h=>{
+      const sum = matches.filter(r=>r.hr===h).reduce((s,r)=>s+(r.subtotal||r.total||0),0);
+      return sum/denom;
+    });
+    if(hourlyChart){
+      hourlyChart.data.datasets[0].data = avgByHour;
+      hourlyChart.update();
+    }else{
+      hourlyChart = mkChart(document.getElementById('hourlyRevChart'), {type:'bar',
+        data:{labels:HOURS.map(h=>String(h).padStart(2,'0')+':00'), datasets:[{data:avgByHour, backgroundColor:C.blue, borderRadius:4}]},
+        options:{plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,grid:{color:'#ffffff10'},title:{display:true,text:'Avg Revenue / Day',color:'#8fa0ba'}},x:{grid:{display:false}}}}});
+    }
+    const dowTxt = hourlyDow==null ? 'every day' : DOWN[hourlyDow]+'s';
+    const catTxt = hourlyCat==null ? 'all categories' : hourlyCat;
+    document.getElementById('hourlySelSummary').textContent = `Showing average hourly revenue for ${dowTxt} · ${catTxt}`;
+    document.querySelectorAll('.hourly-dow-btn').forEach(b=>{
+      const v = b.getAttribute('data-dow');
+      b.classList.toggle('active', (v==='all' && hourlyDow==null) || (v!=='all' && Number(v)===hourlyDow));
+    });
+    document.querySelectorAll('.hourly-cat-row').forEach(tr=>{
+      tr.style.background = (hourlyCat && tr.getAttribute('data-cat')===hourlyCat) ? 'rgba(78,168,242,0.15)' : '';
+    });
+  }
   if(withHour.length){
-    root.appendChild(el(`<h3 class="section-title">Revenue by Hour <span class="section-sub">when the money comes in across the day</span></h3>`));
-    const HOURS = Array.from({length:24},(_,i)=>i);
-    const revByHour = HOURS.map(h=>withHour.filter(r=>r.hr===h).reduce((s,r)=>s+(r.subtotal||r.total||0),0));
-    root.appendChild(el(`<div class="card"><div class="chart-wrap"><canvas id="hourlyRevChart"></canvas></div></div>`));
-    mkChart(document.getElementById('hourlyRevChart'), {type:'bar',
-      data:{labels:HOURS.map(h=>String(h).padStart(2,'0')+':00'), datasets:[{data:revByHour, backgroundColor:C.blue, borderRadius:4}]},
-      options:{plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,grid:{color:'#ffffff10'},title:{display:true,text:'Revenue',color:'#8fa0ba'}},x:{grid:{display:false}}}}});
+    root.appendChild(el(`<h3 class="section-title">Revenue by Hour <span class="section-sub">click a day or a category below to filter — this recalculates instantly</span></h3>`));
+    root.appendChild(el(`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+      <button class="band-tab hourly-dow-btn active" data-dow="all">All days</button>
+      ${DOWN.map((d,i)=>`<button class="band-tab hourly-dow-btn" data-dow="${i}">${d}</button>`).join('')}
+    </div>`));
+    root.appendChild(el(`<div class="card">
+      <div id="hourlySelSummary" style="font-size:12px;color:var(--muted);margin-bottom:8px;"></div>
+      <div class="chart-wrap"><canvas id="hourlyRevChart"></canvas></div>
+    </div>`));
+    redrawHourlyChart();
+    document.querySelectorAll('.hourly-dow-btn').forEach(b=>{
+      b.onclick = ()=>{ const v = b.getAttribute('data-dow'); hourlyDow = v==='all' ? null : Number(v); redrawHourlyChart(); };
+    });
   }
 
   // ---- revenue by day of week -------------------------------------------------------
@@ -3660,11 +3851,21 @@ function renderHourlySheet(sheetName){
   const catRows = [...byCat.entries()].map(([name,g])=>({
     name, n:g.length, revenue:g.reduce((s,r)=>s+(r.subtotal||r.total||0),0)
   })).sort((a,b)=>b.revenue-a.revenue);
-  root.appendChild(el(`<h3 class="section-title">Category Breakdown <span class="section-sub">by net revenue</span></h3>`));
+  root.appendChild(el(`<h3 class="section-title">Category Breakdown <span class="section-sub">by net revenue — click a row to filter the hourly chart above to just that category</span></h3>`));
   root.appendChild(el(`<div class="card"><div style="overflow-x:auto;"><table class="dtable">
     <thead><tr><th>Category</th><th>Line Items</th><th>Revenue</th></tr></thead>
-    <tbody>${catRows.map(r=>`<tr><td>${escapeHtml(r.name)}</td><td>${r.n.toLocaleString()}</td><td style="font-weight:700;color:${C.teal};">₹${Math.round(r.revenue).toLocaleString()}</td></tr>`).join('')}</tbody>
+    <tbody>${catRows.map(r=>`<tr class="hourly-cat-row" data-cat="${escapeHtml(r.name)}" style="cursor:pointer;"><td>${escapeHtml(r.name)}</td><td>${r.n.toLocaleString()}</td><td style="font-weight:700;color:${C.teal};">₹${Math.round(r.revenue).toLocaleString()}</td></tr>`).join('')}</tbody>
   </table></div></div>`));
+  if(withHour.length){
+    document.querySelectorAll('.hourly-cat-row').forEach(tr=>{
+      tr.onclick = ()=>{
+        const c = tr.getAttribute('data-cat');
+        hourlyCat = (hourlyCat===c) ? null : c;
+        redrawHourlyChart();
+        document.getElementById('hourlyRevChart').closest('.card').scrollIntoView({behavior:'smooth', block:'center'});
+      };
+    });
+  }
 
   // ---- payment mode breakdown ---------------------------------------------------------
   const byPay = groupBy(records, r=>r.paymentMode);
@@ -3704,7 +3905,8 @@ function renderSaleDataSheet(sheetName){
 
   const detected = [['Item', col.item], ['Rate', col.rate], ['Quantity', col.qty], ['Net Amount', col.netAmt]];
   root.appendChild(el(`<div class="card" style="border-left:3px solid ${C.purple};margin-bottom:16px;">
-    <p style="font-size:12.5px;color:var(--muted);line-height:1.7;">💰 <b style="color:var(--text)">Item sale summary</b> — one row per item already aggregated over the whole period (price, quantity sold, net revenue).</p>
+    <p style="font-size:12.5px;color:var(--muted);line-height:1.7;">💰 <b style="color:var(--text)">Item sale summary</b> — one row per item already aggregated over the whole period (price, quantity sold, net revenue).
+    ${SALE_MERGED_DUP_COUNT ? ` <b style="color:var(--text)">${SALE_MERGED_DUP_COUNT.toLocaleString()} exact-duplicate row${SALE_MERGED_DUP_COUNT===1?'':'s'}</b> (identical item, rate, quantity and net amount) ${SALE_MERGED_DUP_COUNT===1?'was':'were'} merged.` : ''}</p>
     <div class="colmeta-row" style="margin-top:10px;">${detected.map(([label,c])=>
       `<span class="colmeta-chip">${label}: <b>${c?escapeHtml(String(c)):'—'}</b></span>`).join('')}</div>
   </div>`));
@@ -3786,20 +3988,79 @@ function switchToSheet(sheetName){
   DRILL.foodTag = null;
   initDashboard();
 }
+const MODE_ICON = {generic:'📄', google_reviews:'⭐', rating_summary:'📈', kds:'🍳', hourly:'🧾', sale_summary:'💰', guest_feedback:'💬'};
+const MODE_LABEL = {generic:'Auto-detected', google_reviews:'Google Reviews', rating_summary:'Rating Summary', kds:'KDS', hourly:'Hourly Sales', sale_summary:'Sale Summary', guest_feedback:'Guest Feedback'};
+function sheetRowCount(n){
+  const mode = SHEET_MODE[n];
+  return mode==='generic' ? GENERIC_SHEET_DATA[n].rows.length : mode==='google_reviews' ? GOOGLE_SHEET_DATA[n].length : mode==='rating_summary' ? RATING_SHEET_DATA[n].order.length : mode==='kds' ? KDS_SHEET_DATA[n].records.length : mode==='hourly' ? HOURLY_SHEET_DATA[n].records.length : mode==='sale_summary' ? SALE_SHEET_DATA[n].records.length : SHEET_DATA[n].length;
+}
+function sheetRowUnit(mode){
+  return mode==='rating_summary' ? 'locations' : mode==='kds' ? 'orders' : mode==='hourly' ? 'line items' : mode==='sale_summary' ? 'items' : mode==='google_reviews' ? 'reviews' : 'rows';
+}
+// Display name with the "<file> — " prefix stripped off, since that's shown separately as
+// a group heading in the panel rather than repeated on every single row.
+function sheetDisplayName(n){
+  const src = SHEET_SOURCE_FILE[n];
+  return src && n.startsWith(src + ' — ') ? n.slice(src.length + 3) : n;
+}
 function buildSheetSelector(){
   const wrap = document.getElementById('sheetSelectorWrap');
-  const sel = document.getElementById('sheetSelector');
+  const btn = document.getElementById('sheetSelectorBtn');
+  const panel = document.getElementById('sheetSelectorPanel');
   if(SHEET_NAMES_ORDERED.length<=1){ wrap.style.display = 'none'; return; }
-  wrap.style.display = 'flex';
-  sel.innerHTML = SHEET_NAMES_ORDERED.map(n=>{
+  wrap.style.display = 'block';
+  document.getElementById('sheetSelectorLabel').textContent = sheetDisplayName(CURRENT_SHEET_NAME);
+
+  // Group sheets by source file when this came from a multi-file upload — otherwise
+  // everything sits under one implicit group so the layout is identical to before.
+  const groups = new Map(); // fileLabel -> [sheetName...]
+  SHEET_NAMES_ORDERED.forEach(n=>{
+    const g = SHEET_SOURCE_FILE[n] || '';
+    if(!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(n);
+  });
+
+  const rowHtml = n=>{
     const mode = SHEET_MODE[n];
-    const rowCount = mode==='generic' ? GENERIC_SHEET_DATA[n].rows.length : mode==='google_reviews' ? GOOGLE_SHEET_DATA[n].length : mode==='rating_summary' ? RATING_SHEET_DATA[n].order.length : mode==='kds' ? KDS_SHEET_DATA[n].records.length : mode==='hourly' ? HOURLY_SHEET_DATA[n].records.length : mode==='sale_summary' ? SALE_SHEET_DATA[n].records.length : SHEET_DATA[n].length;
-    const unit = mode==='rating_summary' ? ' locations' : mode==='kds' ? ' orders' : mode==='hourly' ? ' line items' : mode==='sale_summary' ? ' items' : ' rows';
-    const suffix = mode==='generic' ? ' — auto-detected' : mode==='google_reviews' ? ' — Google Reviews' : mode==='rating_summary' ? ' — Rating Summary' : mode==='kds' ? ' — KDS' : mode==='hourly' ? ' — Hourly Sales' : mode==='sale_summary' ? ' — Sale Summary' : '';
-    return `<option value="${escapeHtml(n)}" ${n===CURRENT_SHEET_NAME?'selected':''}>${escapeHtml(n)} (${rowCount.toLocaleString()}${unit}${suffix})</option>`;
+    const active = n===CURRENT_SHEET_NAME;
+    return `<div class="sheet-opt${active?' active':''}" data-sheet="${escapeHtml(n)}">
+      <span class="sheet-opt-icon">${MODE_ICON[mode]||'📄'}</span>
+      <span class="sheet-opt-body">
+        <span class="sheet-opt-name">${escapeHtml(sheetDisplayName(n))}</span>
+        <span class="sheet-opt-meta">${sheetRowCount(n).toLocaleString()} ${sheetRowUnit(mode)} · ${MODE_LABEL[mode]||mode}</span>
+      </span>
+      ${active?'<span class="sheet-opt-check">✓</span>':''}
+    </div>`;
+  };
+
+  panel.innerHTML = [...groups.entries()].map(([fileLabel, names])=>{
+    const heading = fileLabel ? `<div class="sheet-group-heading">📁 ${escapeHtml(fileLabel)}</div>` : '';
+    return heading + names.map(rowHtml).join('');
   }).join('');
+
+  panel.querySelectorAll('.sheet-opt').forEach(opt=>{
+    opt.onclick = (e)=>{ e.stopPropagation(); switchToSheet(opt.getAttribute('data-sheet')); panel.classList.remove('open'); };
+  });
 }
-document.getElementById('sheetSelector').addEventListener('change', (e)=>{ switchToSheet(e.target.value); });
+document.getElementById('sheetSelectorBtn').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  const panel = document.getElementById('sheetSelectorPanel');
+  const isOpen = panel.classList.contains('open');
+  document.querySelectorAll('.filter-panel').forEach(p=>p.classList.remove('open'));
+  if(!isOpen){
+    panel.classList.add('open');
+    panel.style.left='0'; panel.style.right='auto';
+    requestAnimationFrame(()=>{
+      const rect = panel.getBoundingClientRect();
+      let overflowRight = rect.right - (window.innerWidth - 10);
+      let shift = overflowRight > 0 ? -overflowRight : 0;
+      let newLeft = rect.left + shift;
+      if(newLeft < 10) shift += (10 - newLeft);
+      if(shift !== 0){ panel.style.left = shift + 'px'; }
+    });
+  }
+});
+document.getElementById('sheetSelectorPanel').addEventListener('click', (e)=>e.stopPropagation());
 
 function normalizeHeaderText(s){
   return String(s).toLowerCase().replace(/[\u00A0\u2000-\u200B]/g,' ').replace(/\s+/g,' ').trim();
@@ -3959,6 +4220,9 @@ function prettyLabelGeneric(name){
 ========================================================= */
 let KDS_STANDARDS = {};        // { 'cat::<category>': minutes, 'item::<item>': minutes } -- user-set overrides
 let KDS_COL_MAP = {};
+let KDS_MERGED_DUP_COUNT = 0;      // exact-duplicate rows collapsed on the last upload, for display
+let HOURLY_MERGED_DUP_COUNT = 0;
+let SALE_MERGED_DUP_COUNT = 0;
 const KDS_DEFAULT_STANDARD = 10;   // minutes, used only when neither a user target nor a reference-sheet target exists
 
 // Real target prep times supplied for 7 Midway Plaza Suryapet (from the restaurant's own
@@ -4188,7 +4452,10 @@ function mapRowsToKds(rawRows){
       hr: t0 ? t0.getHours() : (when ? when.getHours() : null),
     });
   });
-  return records;
+  const kdsDeduped = mergeExactDuplicates(records,
+    r => [r.item, r.cat, r.dept, r.dt, r.hr, r.mins, r.qty, r.tb, r.st].join('|'));
+  KDS_MERGED_DUP_COUNT = kdsDeduped.mergedCount;
+  return kdsDeduped.records;
 }
 
 /* A sheet is treated as KDS only with an item column AND both timestamps, or an item
@@ -4291,7 +4558,10 @@ function mapRowsToHourly(rawRows){
       dt: when ? when.toISOString().slice(0,10) : '',
     });
   });
-  return records;
+  const hourlyDeduped = mergeExactDuplicates(records,
+    r => [r.item, r.billNo, r.dt, r.hr, r.total, r.subtotal, r.discount, r.tax, r.paymentMode, r.cat].join('|'));
+  HOURLY_MERGED_DUP_COUNT = hourlyDeduped.mergedCount;
+  return hourlyDeduped.records;
 }
 function assessHourlyConfidence(rawRows, records, col){
   if(!records.length) return {ok:false};
@@ -4332,7 +4602,10 @@ function mapRowsToSaleSummary(rawRows){
     if(!item) return;
     records.push({ item, rate: num(col.rate), qty: num(col.qty) ?? 0, netAmt: netAmt ?? 0 });
   });
-  return records;
+  const saleDeduped = mergeExactDuplicates(records,
+    r => [r.item, r.rate, r.qty, r.netAmt].join('|'));
+  SALE_MERGED_DUP_COUNT = saleDeduped.mergedCount;
+  return saleDeduped.records;
 }
 function assessSaleConfidence(rawRows, records, col){
   if(!records.length) return {ok:false};
@@ -4920,6 +5193,25 @@ function buildRecordsForSegment(segRawRows, col){
 // the previous single-pass version; SEGMENTS_DETECTED records how many segments were found
 // so the upload summary can tell the user when their sheet needed this.
 let SEGMENTS_DETECTED = 1;
+let GUEST_MERGED_DUP_COUNT = 0;   // exact-duplicate guest responses (matching comment text too) merged on last upload
+// Only rows carrying matching comment text are ever treated as duplicates here — with just
+// a 1-10 rating scale, two different real guests legitimately giving identical scores in the
+// same hour is common and expected, so rating-only rows are never merged. A genuine repeat
+// export is overwhelmingly more certain when the free-text comment matches exactly too.
+function mergeGuestFeedbackDuplicates(records){
+  const seen = new Set();
+  const out = [];
+  let mergedCount = 0;
+  records.forEach(r=>{
+    const hasText = r.cm || r.cp || r.gi || r.ii;
+    if(!hasText){ out.push(r); return; }
+    const key = [r.sp,r.fr,r.ci,r.fd,r.cf,r.st,r.sh,r.ml,r.tt,r.tb,r.dt,r.hr,r.gi,r.ii,r.cm,r.cp].join('|');
+    if(seen.has(key)){ mergedCount++; return; }
+    seen.add(key);
+    out.push(r);
+  });
+  return { records: out, mergedCount };
+}
 function mapRowsToRecords(rawRows, overrideScales){
   if(!rawRows.length){ SEGMENTS_DETECTED = 1; return []; }
   const baseHeaderKeys = Object.keys(rawRows[0]||{});
@@ -4975,7 +5267,9 @@ function mapRowsToRecords(rawRows, overrideScales){
     for(let i=0;i<segRecords.length;i++) records.push(segRecords[i]);
   });
   LAST_COL_MAP = baseMapping || {};
-  return records;
+  const guestDeduped = mergeGuestFeedbackDuplicates(records);
+  GUEST_MERGED_DUP_COUNT = guestDeduped.mergedCount;
+  return guestDeduped.records;
 }
 
 /* =========================================================
@@ -5489,7 +5783,7 @@ function downloadDashboard(){
     : modeForGuard==='rating_summary' ? !!(RATING_SHEET_DATA[CURRENT_SHEET_NAME] && RATING_SHEET_DATA[CURRENT_SHEET_NAME].order.length)
     : RECORDS.length;
   if(!hasData){ alert('Upload a file first.'); return; }
-  const payload = { sheetData: SHEET_DATA, sheetMode: SHEET_MODE, genericSheetData: GENERIC_SHEET_DATA, googleSheetData: GOOGLE_SHEET_DATA, ratingSheetData: RATING_SHEET_DATA, sheetNamesOrdered: SHEET_NAMES_ORDERED, currentSheetName: CURRENT_SHEET_NAME, filterState: serializeFilterState() };
+  const payload = { sheetData: SHEET_DATA, sheetMode: SHEET_MODE, genericSheetData: GENERIC_SHEET_DATA, googleSheetData: GOOGLE_SHEET_DATA, ratingSheetData: RATING_SHEET_DATA, sheetNamesOrdered: SHEET_NAMES_ORDERED, sheetSourceFile: SHEET_SOURCE_FILE, currentSheetName: CURRENT_SHEET_NAME, filterState: serializeFilterState() };
   const jsonStr = JSON.stringify(payload).replace(/</g, '\\u003c');
 
   let html = TEMPLATE_SOURCE.replace(/^var INITIAL_PAYLOAD = null;$/m, ()=> 'var INITIAL_PAYLOAD = ' + jsonStr + ';');
@@ -5541,6 +5835,7 @@ if(INITIAL_PAYLOAD && INITIAL_PAYLOAD.sheetNamesOrdered && INITIAL_PAYLOAD.sheet
   GOOGLE_SHEET_DATA = INITIAL_PAYLOAD.googleSheetData || {};
   RATING_SHEET_DATA = INITIAL_PAYLOAD.ratingSheetData || {};
   SHEET_NAMES_ORDERED = INITIAL_PAYLOAD.sheetNamesOrdered;
+  SHEET_SOURCE_FILE = INITIAL_PAYLOAD.sheetSourceFile || {};
   const wantedSheet = INITIAL_PAYLOAD.currentSheetName;
   const restoreSheetName = (wantedSheet && SHEET_NAMES_ORDERED.indexOf(wantedSheet)>=0) ? wantedSheet : SHEET_NAMES_ORDERED[0];
   SOURCE_FILENAME = (INITIAL_PAYLOAD.filterState && INITIAL_PAYLOAD.filterState.sourceFilename) || '';
