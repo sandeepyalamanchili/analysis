@@ -148,6 +148,13 @@ select#sheetSelector{-webkit-appearance:menulist;appearance:menulist;font-weight
 .kpi.kpi-clickable:focus{outline:2px solid var(--orange);outline-offset:2px;}
 .kpi-hint{color:var(--muted2);font-size:9.5px;margin-top:6px;letter-spacing:.03em;opacity:.75;}
 .kpi.kpi-clickable:hover .kpi-hint{color:var(--orange);opacity:1;}
+.kpi-why-btn{position:absolute;top:9px;right:9px;width:19px;height:19px;border-radius:50%;background:#ffffff0d;border:1px solid var(--border-soft);color:var(--muted2);font-size:11px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.15s var(--ease);padding:0;}
+.kpi-why-btn:hover, .kpi-why-btn.open{background:var(--orange);border-color:var(--orange);color:#0a0f1a;}
+.kpi-why-panel{display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--border-soft);font-size:11px;line-height:1.55;color:var(--muted);text-align:left;animation:contentFade .15s ease-out;}
+.colmeta-row{display:flex;flex-wrap:wrap;gap:8px;}
+.colmeta-chip{display:inline-flex;align-items:center;gap:5px;background:#ffffff09;border:1px solid var(--border-soft);border-radius:9px;padding:6px 11px;font-size:11.5px;color:var(--muted);white-space:nowrap;transition:.15s var(--ease);}
+.colmeta-chip:hover{border-color:var(--border);background:#ffffff11;}
+.colmeta-chip b{color:var(--text);font-weight:700;}
 
 .modal-backdrop{display:none;position:fixed;inset:0;background:rgba(6,10,18,.72);z-index:200;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(2px);}
 .modal-backdrop.open{display:flex;}
@@ -188,10 +195,10 @@ table.dtable th.sorted.asc::after{content:' ▴';}
 table.dtable td{padding:9px 11px;border-bottom:1px solid var(--border-soft);color:var(--text);}
 table.dtable tr{transition:background .12s var(--ease);}
 table.dtable tr:hover td{background:#ffffff08;}
-.badge{padding:3px 9px;border-radius:20px;font-size:10.5px;font-weight:700;display:inline-block;}
-.badge.green{background:#34d38f26;color:var(--green);}
-.badge.yellow{background:#f2cb4e26;color:var(--yellow);}
-.badge.red{background:#f2545b26;color:var(--red);}
+.badge{padding:4px 10px;border-radius:20px;font-size:10.5px;font-weight:700;display:inline-block;letter-spacing:.02em;}
+.badge.green{background:#34d38f26;color:var(--green);border:1px solid #34d38f33;}
+.badge.yellow{background:#f2cb4e26;color:var(--yellow);border:1px solid #f2cb4e33;}
+.badge.red{background:#f2545b26;color:var(--red);border:1px solid #f2545b33;}
 .rank-pill{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:7px;background:#1c2a40;color:var(--muted);font-size:11px;font-weight:800;}
 .rank-pill.gold{background:linear-gradient(135deg,#f5d76e,#d4a017);color:#3a2c00;}
 .rank-pill.silver{background:linear-gradient(135deg,#cfd8e3,#98a6b8);color:#233043;}
@@ -204,7 +211,8 @@ table.dtable tr:hover td{background:#ffffff08;}
 .comment .meta{color:var(--muted2);font-size:10.5px;margin-top:7px;display:flex;gap:10px;flex-wrap:wrap;}
 .comment .meta span{display:inline-flex;align-items:center;gap:4px;}
 
-.empty-state{color:var(--muted2);font-size:13px;text-align:center;padding:36px 20px;}
+.empty-state{color:var(--muted2);font-size:13px;text-align:center;padding:40px 20px;}
+.empty-state:not(.card){border:1px dashed var(--border-soft);border-radius:var(--radius-sm);background:#ffffff03;}
 .scroll-list{max-height:440px;overflow-y:auto;padding-right:6px;}
 .pager{display:flex;justify-content:center;align-items:center;gap:16px;margin-top:16px;}
 .pager button{background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:9px;padding:8px 16px;cursor:pointer;font-size:12.5px;font-weight:600;}
@@ -652,7 +660,8 @@ function updateHeaderRange(){
   // user should still be told, since it means part of the file used a different layout,
   // not just have that silently absorbed with no trace.
   const segmentTag = SEGMENTS_DETECTED>1 ? ` · ${SEGMENTS_DETECTED} column layouts detected in this sheet & auto-reconciled` : '';
-  const dupTag = GUEST_MERGED_DUP_COUNT>0 ? ` · ${GUEST_MERGED_DUP_COUNT.toLocaleString()} duplicate response${GUEST_MERGED_DUP_COUNT===1?'':'s'} merged` : '';
+  const currentDupCount = GUEST_DUP_COUNT_BY_SHEET[CURRENT_SHEET_NAME] || 0;
+  const dupTag = currentDupCount>0 ? ` · ${currentDupCount.toLocaleString()} duplicate response${currentDupCount===1?'':'s'} merged` : '';
   if(dates.length){
     const start = RECORDS.find(r=>r.dt===dates[0]).dy;
     const end = RECORDS.find(r=>r.dt===dates[dates.length-1]).dy;
@@ -970,6 +979,17 @@ function groupBy(arr, keyFn){
   arr.forEach(r=>{ const k = keyFn(r); if(!m.has(k)) m.set(k,[]); m.get(k).push(r); });
   return m;
 }
+// Normalizes a single field for duplicate-comparison purposes only (never for display):
+// trims and case-folds text so "Ghee Karam Idly " and "ghee karam idly" count as the same
+// value, and rounds numbers to 2 decimals so floating-point noise (4.999999999 vs 5, a
+// byproduct of timestamp-difference math) doesn't make two genuinely identical rows look
+// different. Comparison-only — the real, unrounded/uncased values are always what's shown
+// and calculated with everywhere else.
+function dedupKeyPart(v){
+  if(v==null) return '';
+  if(typeof v === 'number') return isNaN(v) ? '' : (Math.round(v*100)/100);
+  return String(v).trim().replace(/\s+/g,' ').toLowerCase();
+}
 // Collapses rows that are exact duplicates of each other (same underlying line accidentally
 // exported twice) down to a single row, so they don't inflate revenue/order counts. Only
 // rows whose full signature (via keyFn) matches exactly are merged — a row that differs in
@@ -980,17 +1000,30 @@ function mergeExactDuplicates(records, keyFn){
   const out = [];
   let mergedCount = 0;
   records.forEach(r=>{
-    const k = keyFn(r);
+    const k = keyFn(r).map(dedupKeyPart).join('|');
     if(seen.has(k)){ mergedCount++; return; }
     seen.add(k);
     out.push(r);
   });
   return { records: out, mergedCount };
 }
+let KPI_WHY_SEQ = 0;
 function kpiCard(val,label,sub,color,breakdownKey,valColor){
   const clickable = breakdownKey ? ' kpi-clickable" data-breakdown-key="'+breakdownKey+'" data-breakdown-label="'+escapeHtml(label)+'" tabindex="0" role="button" aria-haspopup="dialog' : '';
   const hint = breakdownKey ? '<div class="kpi-hint">Click for breakdown ▸</div>' : '';
-  return `<div class="kpi${clickable}" style="--accent:${color||'var(--orange)'}"><div class="val" style="color:${valColor||color||'var(--text)'}">${val}</div><div class="label">${escapeHtml(label)}</div>${sub?`<div class="sub">${escapeHtml(sub)}</div>`:''}${hint}</div>`;
+  // Every KPI gets a small "why this number" toggle — using its existing sub-text as the
+  // explanation where one was given, and falling back to a plain, honest sentence naming
+  // what's being counted for the handful of cards that don't carry a custom description.
+  const explain = sub ? sub : `The ${label.toLowerCase()} for the current selection.`;
+  const whyId = 'kpiwhy' + (KPI_WHY_SEQ++);
+  return `<div class="kpi${clickable}" style="--accent:${color||'var(--orange)'}">
+    <button type="button" class="kpi-why-btn" data-why-target="${whyId}" aria-expanded="false" aria-label="Why this number" title="Why this number?" onclick="event.stopPropagation(); const p=document.getElementById('${whyId}'); const willOpen=p.style.display!=='block'; p.style.display=willOpen?'block':'none'; this.setAttribute('aria-expanded', willOpen?'true':'false'); this.classList.toggle('open', willOpen);">ⓘ</button>
+    <div class="val" style="color:${valColor||color||'var(--text)'}">${val}</div>
+    <div class="label">${escapeHtml(label)}</div>
+    ${sub?`<div class="sub">${escapeHtml(sub)}</div>`:''}
+    ${hint}
+    <div class="kpi-why-panel" id="${whyId}">${escapeHtml(explain)}</div>
+  </div>`;
 }
 /* NPS is judged on an absolute, industry-standard scale (not relative to this dataset):
    ≥50 excellent, 0–49 room to improve, negative is a real problem — so the number itself
@@ -2613,6 +2646,7 @@ let KDS_SHEET_DATA = {};      // { sheetName: {records, col, confidence} } for k
 let HOURLY_SHEET_DATA = {};   // { sheetName: {records, col} } for billwise hourly settlement exports
 let SALE_SHEET_DATA = {};     // { sheetName: {records, col} } for item-level sale/category summary exports
 let RAW_ROWS_BY_SHEET = {};   // kept so changing a worded-answer score can re-derive that sheet's records
+let GUEST_DUP_COUNT_BY_SHEET = {};   // per-sheet duplicate-merge count for guest-feedback sheets
 let SHEET_NAMES_ORDERED = []; // preserves the workbook's original sheet order
 let CURRENT_SHEET_NAME = null;
 
@@ -2756,6 +2790,7 @@ async function finishMappingSheets(parsedSheets){
     const hourlySheetData = {};
     const saleSheetData = {};
     const rawRowsBySheet = {};
+    const guestDupCountBySheet = {};
     const sheetNamesOrdered = [];
     for(let sIdx=0; sIdx<parsedSheets.length; sIdx++){
       const {sheetName, rowsArray, rawRows} = parsedSheets[sIdx];
@@ -2774,6 +2809,7 @@ async function finishMappingSheets(parsedSheets){
       if(confidence.ok){
         sheetData[sheetName] = mapped;
         rawRowsBySheet[sheetName] = rawRows;
+        guestDupCountBySheet[sheetName] = GUEST_MERGED_DUP_COUNT;
         sheetModes[sheetName] = 'guest_feedback';
         sheetNamesOrdered.push(sheetName);
         continue;
@@ -2789,7 +2825,7 @@ async function finishMappingSheets(parsedSheets){
       const kdsMapped = mapRowsToKds(rawRows);
       const kdsConfidence = assessKdsConfidence(rawRows, kdsMapped, KDS_COL_MAP);
       if(kdsConfidence.ok){
-        kdsSheetData[sheetName] = { records: kdsMapped, col: {...KDS_COL_MAP}, confidence: kdsConfidence };
+        kdsSheetData[sheetName] = { records: kdsMapped, col: {...KDS_COL_MAP}, confidence: kdsConfidence, mergedDupCount: KDS_MERGED_DUP_COUNT };
         sheetModes[sheetName] = 'kds';
         sheetNamesOrdered.push(sheetName);
         continue;
@@ -2797,7 +2833,7 @@ async function finishMappingSheets(parsedSheets){
       const hourlyMapped = mapRowsToHourly(rawRows);
       const hourlyConfidence = assessHourlyConfidence(rawRows, hourlyMapped, HOURLY_COL_MAP);
       if(hourlyConfidence.ok){
-        hourlySheetData[sheetName] = { records: hourlyMapped, col: {...HOURLY_COL_MAP} };
+        hourlySheetData[sheetName] = { records: hourlyMapped, col: {...HOURLY_COL_MAP}, mergedDupCount: HOURLY_MERGED_DUP_COUNT };
         sheetModes[sheetName] = 'hourly';
         sheetNamesOrdered.push(sheetName);
         continue;
@@ -2805,7 +2841,7 @@ async function finishMappingSheets(parsedSheets){
       const saleMapped = mapRowsToSaleSummary(rawRows);
       const saleConfidence = assessSaleConfidence(rawRows, saleMapped, SALE_COL_MAP);
       if(saleConfidence.ok){
-        saleSheetData[sheetName] = { records: saleMapped, col: {...SALE_COL_MAP} };
+        saleSheetData[sheetName] = { records: saleMapped, col: {...SALE_COL_MAP}, mergedDupCount: SALE_MERGED_DUP_COUNT };
         sheetModes[sheetName] = 'sale_summary';
         sheetNamesOrdered.push(sheetName);
         continue;
@@ -2830,6 +2866,7 @@ async function finishMappingSheets(parsedSheets){
     HOURLY_SHEET_DATA = hourlySheetData;
     SALE_SHEET_DATA = saleSheetData;
     RAW_ROWS_BY_SHEET = rawRowsBySheet;
+    GUEST_DUP_COUNT_BY_SHEET = guestDupCountBySheet;
     SHEET_NAMES_ORDERED = sheetNamesOrdered;
     switchToSheet(sheetNamesOrdered[0]);
   }catch(err){ showUploadError('Something went wrong mapping this file: ' + err.message); console.error(err); }
@@ -3496,7 +3533,7 @@ function renderKdsSheet(sheetName){
   document.getElementById('app').style.display = 'block';
   applyBrandName();
 
-  const { records, col, confidence } = KDS_SHEET_DATA[sheetName];
+  const { records, col, confidence, mergedDupCount: KDS_MERGED_DUP_COUNT } = KDS_SHEET_DATA[sheetName];
   const timed = records.filter(r=>r.mins!=null);
   const hasDept = records.some(r=>r.dept);
   const dates = [...new Set(records.map(r=>r.dt).filter(Boolean))].sort();
@@ -3747,7 +3784,7 @@ function renderHourlySheet(sheetName){
   document.getElementById('app').style.display = 'block';
   applyBrandName();
 
-  const { records, col } = HOURLY_SHEET_DATA[sheetName];
+  const { records, col, mergedDupCount: HOURLY_MERGED_DUP_COUNT } = HOURLY_SHEET_DATA[sheetName];
   const dates = [...new Set(records.map(r=>r.dt).filter(Boolean))].sort();
   const dateTxt = dates.length ? `${dates[0]} to ${dates[dates.length-1]} · ` : '';
   document.getElementById('headerSub').textContent = `${dateTxt}${records.length.toLocaleString()} line items · Hourly Sales view`;
@@ -3897,7 +3934,7 @@ function renderSaleDataSheet(sheetName){
   document.getElementById('app').style.display = 'block';
   applyBrandName();
 
-  const { records, col } = SALE_SHEET_DATA[sheetName];
+  const { records, col, mergedDupCount: SALE_MERGED_DUP_COUNT } = SALE_SHEET_DATA[sheetName];
   document.getElementById('headerSub').textContent = `${records.length.toLocaleString()} items · Sale Summary view`;
 
   const root = document.getElementById('content');
@@ -4437,10 +4474,20 @@ function mapRowsToKds(rawRows){
     const days=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
+    // Category and department are reconciled against 7 Midway Plaza's own reference sheet
+    // whenever the item is listed there, so both always match the restaurant's real
+    // taxonomy exactly rather than however this particular export happened to label them —
+    // the raw sheet's own value is only used as a fallback for items the reference doesn't cover.
+    const rawCat = txt(col.category) || 'Uncategorised';
+    const rawDept = txt(col.department);
+    const ref = KDS_REF_BY_ITEM[kdsNormName(item || '')];
+    const cat = (ref && ref.cat) || rawCat;
+    const dept = (ref && ref.dept) || rawDept;
+
     records.push({
       item: item || 'Unspecified item',
-      cat: txt(col.category) || 'Uncategorised',
-      dept: txt(col.department),           // null when the sheet has no department column yet
+      cat,
+      dept,           // null when neither the reference sheet nor this row's own column has one
       mins,
       qty: num(col.qty) ?? 1,
       status: txt(col.status),
@@ -4453,7 +4500,7 @@ function mapRowsToKds(rawRows){
     });
   });
   const kdsDeduped = mergeExactDuplicates(records,
-    r => [r.item, r.cat, r.dept, r.dt, r.hr, r.mins, r.qty, r.tb, r.st].join('|'));
+    r => [r.item, r.cat, r.dept, r.dt, r.hr, r.mins, r.qty, r.tb, r.st]);
   KDS_MERGED_DUP_COUNT = kdsDeduped.mergedCount;
   return kdsDeduped.records;
 }
@@ -4559,7 +4606,7 @@ function mapRowsToHourly(rawRows){
     });
   });
   const hourlyDeduped = mergeExactDuplicates(records,
-    r => [r.item, r.billNo, r.dt, r.hr, r.total, r.subtotal, r.discount, r.tax, r.paymentMode, r.cat].join('|'));
+    r => [r.item, r.billNo, r.dt, r.hr, r.total, r.subtotal, r.discount, r.tax, r.paymentMode, r.cat]);
   HOURLY_MERGED_DUP_COUNT = hourlyDeduped.mergedCount;
   return hourlyDeduped.records;
 }
@@ -4603,7 +4650,7 @@ function mapRowsToSaleSummary(rawRows){
     records.push({ item, rate: num(col.rate), qty: num(col.qty) ?? 0, netAmt: netAmt ?? 0 });
   });
   const saleDeduped = mergeExactDuplicates(records,
-    r => [r.item, r.rate, r.qty, r.netAmt].join('|'));
+    r => [r.item, r.rate, r.qty, r.netAmt]);
   SALE_MERGED_DUP_COUNT = saleDeduped.mergedCount;
   return saleDeduped.records;
 }
@@ -5205,7 +5252,7 @@ function mergeGuestFeedbackDuplicates(records){
   records.forEach(r=>{
     const hasText = r.cm || r.cp || r.gi || r.ii;
     if(!hasText){ out.push(r); return; }
-    const key = [r.sp,r.fr,r.ci,r.fd,r.cf,r.st,r.sh,r.ml,r.tt,r.tb,r.dt,r.hr,r.gi,r.ii,r.cm,r.cp].join('|');
+    const key = [r.sp,r.fr,r.ci,r.fd,r.cf,r.st,r.sh,r.ml,r.tt,r.tb,r.dt,r.hr,r.gi,r.ii,r.cm,r.cp].map(dedupKeyPart).join('|');
     if(seen.has(key)){ mergedCount++; return; }
     seen.add(key);
     out.push(r);
