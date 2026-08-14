@@ -4078,7 +4078,7 @@ function renderSaleDataSheet(sheetName){
   const detected = [['Item', col.item], ['Rate', col.rate], ['Quantity', col.qty], ['Net Amount', col.netAmt]];
   root.appendChild(el(`<div class="card" style="border-left:3px solid ${C.purple};margin-bottom:16px;">
     <p style="font-size:12.5px;color:var(--muted);line-height:1.7;">💰 <b style="color:var(--text)">Item sale summary</b> — one row per item already aggregated over the whole period (price, quantity sold, net revenue).
-    ${SALE_MERGED_DUP_COUNT ? ` <b style="color:var(--text)">${SALE_MERGED_DUP_COUNT.toLocaleString()} exact-duplicate row${SALE_MERGED_DUP_COUNT===1?'':'s'}</b> (identical item, rate, quantity and net amount) ${SALE_MERGED_DUP_COUNT===1?'was':'were'} merged.` : ''}</p>
+    ${SALE_MERGED_DUP_COUNT ? ` This sheet had the same item split across multiple rows — <b style="color:var(--text)">${SALE_MERGED_DUP_COUNT.toLocaleString()} extra row${SALE_MERGED_DUP_COUNT===1?'':'s'}</b> ${SALE_MERGED_DUP_COUNT===1?'was':'were'} combined into its item's single total, so each item below reflects its real full quantity and revenue, not just one row's worth.` : ''}</p>
     <div class="colmeta-row" style="margin-top:10px;">${detected.map(([label,c])=>
       `<span class="colmeta-chip">${label}: <b>${c?escapeHtml(String(c)):'—'}</b></span>`).join('')}</div>
   </div>`));
@@ -4776,19 +4776,37 @@ function mapRowsToSaleSummary(rawRows){
   };
   SALE_COL_MAP = col;
 
-  const records = [];
+  const rawRecords = [];
   rawRows.forEach(r=>{
     const txt = c => { if(!c) return null; const v=r[c]; if(v==null) return null; const s=String(v).trim(); return s?s:null; };
     const num = c => { if(!c) return null; const v=r[c]; if(v==null||v==='') return null; const n=Number(v); return isNaN(n)?null:n; };
     const item = txt(col.item);
     const netAmt = num(col.netAmt);
     if(!item) return;
-    records.push({ item, rate: num(col.rate), qty: num(col.qty) ?? 0, netAmt: netAmt ?? 0 });
+    rawRecords.push({ item, rate: num(col.rate), qty: num(col.qty) ?? 0, netAmt: netAmt ?? 0 });
   });
-  const saleDeduped = mergeExactDuplicates(records,
-    r => [r.item, r.rate, r.qty, r.netAmt]);
-  SALE_MERGED_DUP_COUNT = saleDeduped.mergedCount;
-  return saleDeduped.records;
+  // The same item name can appear on several separate rows in this export — split by some
+  // other dimension the sheet doesn't label (a batch, a sub-period, etc.) — rather than this
+  // already being one row per item. So a true one-row-per-item summary means grouping by
+  // item name and summing quantity/net amount across every row that shares it; the rate
+  // shown is whichever value was most common for that item, since it's expected to be a
+  // fixed menu price and an occasional differing row is more likely a one-off discount or
+  // correction than the item's real price changing.
+  const groups = new Map();
+  rawRecords.forEach(r=>{
+    const key = r.item.toLowerCase().replace(/\s+/g,' ');
+    if(!groups.has(key)) groups.set(key, {item:r.item.replace(/\s+/g,' '), rateCounts:{}, qty:0, netAmt:0});
+    const g = groups.get(key);
+    g.qty += r.qty;
+    g.netAmt += r.netAmt;
+    if(r.rate!=null) g.rateCounts[r.rate] = (g.rateCounts[r.rate]||0) + 1;
+  });
+  const records = [...groups.values()].map(g=>{
+    const rateEntries = Object.entries(g.rateCounts).sort((a,b)=>b[1]-a[1]);
+    return { item:g.item, rate: rateEntries.length ? Number(rateEntries[0][0]) : null, qty:g.qty, netAmt:g.netAmt };
+  });
+  SALE_MERGED_DUP_COUNT = rawRecords.length - records.length;
+  return records;
 }
 function assessSaleConfidence(rawRows, records, col){
   if(!records.length) return {ok:false};
