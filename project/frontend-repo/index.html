@@ -92,6 +92,12 @@ button{font-family:inherit;}
 .sheet-opt-name{font-size:12.5px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .sheet-opt-meta{font-size:11px;color:var(--muted2);}
 .sheet-opt-check{color:var(--orange);font-weight:800;font-size:13px;flex-shrink:0;}
+.file-chooser-opt{cursor:pointer;padding:14px 12px;border:1px solid transparent;}
+.file-chooser-opt:hover{background:#1c2a40;border-color:var(--border);}
+.file-chooser-opt .sheet-opt-icon{font-size:22px;}
+.file-chooser-opt .sheet-opt-name{font-size:14px;}
+.file-chooser-opt .sheet-opt-check{opacity:0;transition:.15s var(--ease);}
+.file-chooser-opt:hover .sheet-opt-check{opacity:1;}
 .filter-actions button:hover{color:var(--orange);}
 .reset-btn{background:transparent;border:1px dashed var(--border);color:var(--muted);border-radius:10px;padding:9px 14px;font-size:12.5px;cursor:pointer;font-weight:600;}
 .action-btn{background:var(--panel);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:9px 15px;font-size:12.5px;cursor:pointer;font-weight:700;display:inline-flex;align-items:center;gap:7px;transition:.18s var(--ease);white-space:nowrap;}
@@ -309,6 +315,17 @@ input[type=range]{accent-color:var(--orange);width:120px;}
     </div>
     <div id="uploadError" style="display:none;margin-top:16px;background:#f2545b1a;border:1px solid #f2545b55;color:var(--red);border-radius:10px;padding:12px 16px;font-size:13px;text-align:left;"></div>
     <div id="engineNote" style="margin-top:22px;color:var(--muted2);font-size:11.5px;line-height:1.6;border-top:1px solid var(--border);padding-top:16px;">Your file is processed entirely in your browser — nothing is uploaded anywhere.</div>
+  </div>
+</div>
+
+<div id="fileChooserScreen" style="display:none;min-height:100vh;align-items:flex-start;justify-content:center;padding:48px 24px;">
+  <div style="max-width:760px;width:100%;">
+    <div style="text-align:center;margin-bottom:28px;">
+      <div style="font-size:34px;margin-bottom:10px;">📂</div>
+      <h1 style="font-size:21px;margin-bottom:8px;">Which file would you like to look at?</h1>
+      <p style="color:var(--muted);font-size:13.5px;">You uploaded several files — pick a sheet below to open its dashboard. You can switch between all of them anytime from the "📑 Sheet" button at the top once you're in.</p>
+    </div>
+    <div id="fileChooserList"></div>
   </div>
 </div>
 
@@ -2734,6 +2751,7 @@ fileInput.addEventListener('change', (e)=>{ if(e.target.files.length) handleFile
 
 document.getElementById('newFileBtn').addEventListener('click', ()=>{
   document.getElementById('app').style.display = 'none';
+  document.getElementById('fileChooserScreen').style.display = 'none';
   document.getElementById('uploadScreen').style.display = 'flex';
   uploadError.style.display = 'none';
   uploadStatus.style.display = 'none';
@@ -2978,7 +2996,11 @@ async function finishMappingSheets(parsedSheets){
     RAW_ROWS_BY_SHEET = rawRowsBySheet;
     GUEST_DUP_COUNT_BY_SHEET = guestDupCountBySheet;
     SHEET_NAMES_ORDERED = sheetNamesOrdered;
-    switchToSheet(sheetNamesOrdered[0]);
+    if(Object.keys(SHEET_SOURCE_FILE).length){
+      showFileChooserScreen();
+    }else{
+      switchToSheet(sheetNamesOrdered[0]);
+    }
   }catch(err){ showUploadError('Something went wrong mapping this file: ' + err.message); console.error(err); }
 }
 
@@ -3065,9 +3087,14 @@ async function handleFiles(fileList){
     try{
       sheets = BACKEND.available ? await gatherParsedSheetsViaBackend(f) : await parseFileInBrowser(f);
     }catch(err){
-      console.error('Failed to parse', f.name, err);
-      failures.push(f.name);
-      continue;
+      console.error('Backend read failed for', f.name, '— falling back to in-browser parsing.', err);
+      try{
+        sheets = await parseFileInBrowser(f);
+      }catch(err2){
+        console.error('Failed to parse', f.name, err2);
+        failures.push(f.name);
+        continue;
+      }
     }
     sheets.forEach(s=>{
       const qualifiedName = `${f.name} — ${s.sheetName}`;
@@ -4174,6 +4201,48 @@ function sheetRowUnit(mode){
 function sheetDisplayName(n){
   const src = SHEET_SOURCE_FILE[n];
   return src && n.startsWith(src + ' — ') ? n.slice(src.length + 3) : n;
+}
+// Shown once, right after a multi-file upload finishes, instead of silently jumping into
+// whichever sheet happened to be processed first — the person picks which file (and which
+// of its sheets) they actually want to look at before any dashboard renders.
+function showFileChooserScreen(){
+  document.getElementById('uploadScreen').style.display = 'none';
+  document.getElementById('app').style.display = 'none';
+  const screen = document.getElementById('fileChooserScreen');
+  screen.style.display = 'flex';
+
+  const groups = new Map(); // fileLabel -> [sheetName...]
+  SHEET_NAMES_ORDERED.forEach(n=>{
+    const g = SHEET_SOURCE_FILE[n] || '';
+    if(!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(n);
+  });
+
+  const rowHtml = n=>{
+    const mode = SHEET_MODE[n];
+    return `<div class="sheet-opt file-chooser-opt" data-sheet="${escapeHtml(n)}">
+      <span class="sheet-opt-icon">${MODE_ICON[mode]||'📄'}</span>
+      <span class="sheet-opt-body">
+        <span class="sheet-opt-name">${escapeHtml(sheetDisplayName(n))}</span>
+        <span class="sheet-opt-meta">${sheetRowCount(n).toLocaleString()} ${sheetRowUnit(mode)} · ${MODE_LABEL[mode]||mode}</span>
+      </span>
+      <span class="sheet-opt-check">Open ▸</span>
+    </div>`;
+  };
+
+  document.getElementById('fileChooserList').innerHTML = [...groups.entries()].map(([fileLabel, names])=>`
+    <div class="card" style="margin-bottom:14px;">
+      <div class="card-title" style="margin-bottom:10px;">📁 ${escapeHtml(fileLabel || 'This file')} <span class="section-sub">${names.length} sheet${names.length===1?'':'s'} found</span></div>
+      ${names.map(rowHtml).join('')}
+    </div>`).join('');
+
+  screen.querySelectorAll('.file-chooser-opt').forEach(opt=>{
+    opt.onclick = ()=>{
+      screen.style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      switchToSheet(opt.getAttribute('data-sheet'));
+    };
+  });
 }
 function buildSheetSelector(){
   const wrap = document.getElementById('sheetSelectorWrap');
