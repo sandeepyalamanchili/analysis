@@ -1045,8 +1045,118 @@ function npsColor(n){
 const BREAKDOWN_FIELD_LABELS = {sp:'Service Speed', fr:'Friendliness', ci:'Mid-Meal Check-In', fd:'Food Rating', cf:'City Comfort'};
 let breakdownChartInstance = null;
 let breakdownTriggerEl = null;
+
+// Breakdown content for KDS / Hourly Sales / Sale Summary KPI cards — these don't fit the
+// 1-10 mark scale the guest-feedback breakdown below is built for, so each one groups its
+// number by whichever dimension actually explains it (department, category, payment mode,
+// or top items), read fresh from the currently open sheet every time the card is clicked.
+const GENERIC_BREAKDOWN_BUILDERS = {
+  'kds:orders_by_dept': ()=>{
+    const sheet = KDS_SHEET_DATA[CURRENT_SHEET_NAME]; if(!sheet) return null;
+    const hasDept = sheet.records.some(r=>r.dept);
+    const gkey = hasDept ? 'dept' : 'cat';
+    const rows = [...groupBy(sheet.records, r=>r[gkey] || 'Unassigned').entries()]
+      .map(([label,g])=>({label, value:g.length, display:g.length.toLocaleString()})).sort((a,b)=>b.value-a.value);
+    return {title:'Total Orders — by '+(hasDept?'Department':'Category'), sub:sheet.records.length.toLocaleString()+' orders in this sheet', rows, colLabel:hasDept?'Department':'Category'};
+  },
+  'kds:avgprep_by_dept': ()=>{
+    const sheet = KDS_SHEET_DATA[CURRENT_SHEET_NAME]; if(!sheet) return null;
+    const timed = sheet.records.filter(r=>r.mins!=null);
+    const hasDept = timed.some(r=>r.dept);
+    const gkey = hasDept ? 'dept' : 'cat';
+    const rows = [...groupBy(timed, r=>r[gkey] || 'Unassigned').entries()]
+      .map(([label,g])=>({label, value:g.reduce((s,r)=>s+r.mins,0)/g.length, display:fmt1(g.reduce((s,r)=>s+r.mins,0)/g.length)+' min'})).sort((a,b)=>b.value-a.value);
+    return {title:'Average Prep Time — by '+(hasDept?'Department':'Category'), sub:timed.length.toLocaleString()+' timed orders', rows, colLabel:hasDept?'Department':'Category'};
+  },
+  'kds:within5_by_dept': ()=>{
+    const sheet = KDS_SHEET_DATA[CURRENT_SHEET_NAME]; if(!sheet) return null;
+    const timed = sheet.records.filter(r=>r.mins!=null);
+    const hasDept = timed.some(r=>r.dept);
+    const gkey = hasDept ? 'dept' : 'cat';
+    const rows = [...groupBy(timed, r=>r[gkey] || 'Unassigned').entries()].map(([label,g])=>{
+      const n = g.filter(r=>r.mins<5).length;
+      return {label, value:n/g.length*100, display:pct(n,g.length)+'% ('+n.toLocaleString()+' of '+g.length.toLocaleString()+')'};
+    }).sort((a,b)=>b.value-a.value);
+    return {title:'Delivered Within 5 min — by '+(hasDept?'Department':'Category'), sub:timed.length.toLocaleString()+' timed orders', rows, colLabel:hasDept?'Department':'Category'};
+  },
+  'kds:over10_by_dept': ()=>{
+    const sheet = KDS_SHEET_DATA[CURRENT_SHEET_NAME]; if(!sheet) return null;
+    const timed = sheet.records.filter(r=>r.mins!=null);
+    const hasDept = timed.some(r=>r.dept);
+    const gkey = hasDept ? 'dept' : 'cat';
+    const rows = [...groupBy(timed, r=>r[gkey] || 'Unassigned').entries()].map(([label,g])=>{
+      const n = g.filter(r=>r.mins>10).length;
+      return {label, value:n/g.length*100, display:pct(n,g.length)+'% ('+n.toLocaleString()+' of '+g.length.toLocaleString()+')'};
+    }).sort((a,b)=>b.value-a.value);
+    return {title:'Took Over 10 min — by '+(hasDept?'Department':'Category'), sub:timed.length.toLocaleString()+' timed orders', rows, colLabel:hasDept?'Department':'Category'};
+  },
+  'hourly:revenue_by_cat': ()=>{
+    const sheet = HOURLY_SHEET_DATA[CURRENT_SHEET_NAME]; if(!sheet) return null;
+    const rows = [...groupBy(sheet.records, r=>r.cat).entries()]
+      .map(([label,g])=>{ const v=g.reduce((s,r)=>s+(r.subtotal||r.total||0),0); return {label, value:v, display:'₹'+Math.round(v).toLocaleString()}; }).sort((a,b)=>b.value-a.value);
+    return {title:'Net Revenue — by Category', sub:sheet.records.length.toLocaleString()+' line items', rows, colLabel:'Category'};
+  },
+  'hourly:bills_by_payment': ()=>{
+    const sheet = HOURLY_SHEET_DATA[CURRENT_SHEET_NAME]; if(!sheet) return null;
+    const rows = [...groupBy(sheet.records, r=>r.paymentMode).entries()]
+      .map(([label,g])=>{ const v=new Set(g.map(r=>r.billNo).filter(Boolean)).size || g.length; return {label, value:v, display:v.toLocaleString()}; }).sort((a,b)=>b.value-a.value);
+    return {title:'Bills — by Payment Mode', sub:sheet.records.length.toLocaleString()+' line items', rows, colLabel:'Payment Mode'};
+  },
+  'hourly:discount_by_cat': ()=>{
+    const sheet = HOURLY_SHEET_DATA[CURRENT_SHEET_NAME]; if(!sheet) return null;
+    const rows = [...groupBy(sheet.records, r=>r.cat).entries()]
+      .map(([label,g])=>{ const v=g.reduce((s,r)=>s+(r.discount||0),0); return {label, value:v, display:'₹'+Math.round(v).toLocaleString()}; }).sort((a,b)=>b.value-a.value);
+    return {title:'Total Discount — by Category', sub:sheet.records.length.toLocaleString()+' line items', rows, colLabel:'Category'};
+  },
+  'hourly:tax_by_cat': ()=>{
+    const sheet = HOURLY_SHEET_DATA[CURRENT_SHEET_NAME]; if(!sheet) return null;
+    const rows = [...groupBy(sheet.records, r=>r.cat).entries()]
+      .map(([label,g])=>{ const v=g.reduce((s,r)=>s+(r.tax||0),0); return {label, value:v, display:'₹'+Math.round(v).toLocaleString()}; }).sort((a,b)=>b.value-a.value);
+    return {title:'Total Tax — by Category', sub:sheet.records.length.toLocaleString()+' line items', rows, colLabel:'Category'};
+  },
+  'sale:items_by_revenue': ()=>{
+    const sheet = SALE_SHEET_DATA[CURRENT_SHEET_NAME]; if(!sheet) return null;
+    const rows = [...sheet.records].sort((a,b)=>b.netAmt-a.netAmt).slice(0,15).map(r=>({label:r.item, value:r.netAmt, display:'₹'+Math.round(r.netAmt).toLocaleString()}));
+    return {title:'Items — Top 15 by Revenue', sub:sheet.records.length.toLocaleString()+' items total', rows, colLabel:'Item'};
+  },
+  'sale:qty_top_items': ()=>{
+    const sheet = SALE_SHEET_DATA[CURRENT_SHEET_NAME]; if(!sheet) return null;
+    const rows = [...sheet.records].sort((a,b)=>b.qty-a.qty).slice(0,15).map(r=>({label:r.item, value:r.qty, display:r.qty.toLocaleString()}));
+    return {title:'Total Quantity Sold — Top 15 Items', sub:sheet.records.length.toLocaleString()+' items total', rows, colLabel:'Item'};
+  },
+  'sale:rate_top_items': ()=>{
+    const sheet = SALE_SHEET_DATA[CURRENT_SHEET_NAME]; if(!sheet) return null;
+    const withRate = sheet.records.filter(r=>r.rate!=null);
+    const rows = [...withRate].sort((a,b)=>b.rate-a.rate).slice(0,15).map(r=>({label:r.item, value:r.rate, display:'₹'+fmt1(r.rate)}));
+    return {title:'Average Rate — Highest-Priced 15 Items', sub:withRate.length.toLocaleString()+' priced items', rows, colLabel:'Item'};
+  },
+};
+function openGenericBreakdown(data, cardLabel){
+  document.getElementById('breakdownTitle').textContent = data ? data.title : cardLabel;
+  document.getElementById('breakdownSub').textContent = data ? data.sub : 'No data available for this breakdown right now.';
+  if(breakdownChartInstance){ breakdownChartInstance.destroy(); breakdownChartInstance = null; }
+  const canvas = document.getElementById('breakdownChart');
+  const rows = (data && data.rows) || [];
+  if(window.Chart && canvas && rows.length){
+    breakdownChartInstance = new Chart(canvas.getContext('2d'), {
+      type:'bar',
+      data:{ labels:rows.map(r=>r.label), datasets:[{ data:rows.map(r=>r.value), backgroundColor:C.blue, borderRadius:4 }] },
+      options:{ indexAxis: rows.length>6?'y':'x', plugins:{legend:{display:false}}, scales:{ x:{grid:baseGrid}, y:{grid:baseGrid} } }
+    });
+  }
+  const tRows = rows.map(r=>`<tr><td>${escapeHtml(r.label)}</td><td>${escapeHtml(r.display)}</td></tr>`);
+  document.getElementById('breakdownTableWrap').innerHTML = rows.length
+    ? `<table class="breakdown-table"><thead><tr><th>${escapeHtml(data.colLabel)}</th><th>Value</th></tr></thead><tbody>${tRows.join('')}</tbody></table>`
+    : `<div class="empty-state">No data in the current view.</div>`;
+  document.getElementById('breakdownBackdrop').classList.add('open');
+  document.getElementById('breakdownClose').focus();
+}
 function openBreakdownModal(key, cardLabel, triggerEl){
   breakdownTriggerEl = triggerEl || document.activeElement;
+  if(GENERIC_BREAKDOWN_BUILDERS[key]){
+    openGenericBreakdown(GENERIC_BREAKDOWN_BUILDERS[key](), cardLabel);
+    return;
+  }
   const fieldLabel = BREAKDOWN_FIELD_LABELS[key] || cardLabel;
   const data = getFilteredData().filter(r=>r[key]!=null);
   const counts = Array.from({length:10},(_,i)=>i+1).map(mark=> data.filter(r=>r[key]===mark).length);
@@ -3565,10 +3675,10 @@ function renderKdsSheet(sheetName){
   timed.forEach(r=>{ const b=bucketOf(r.mins); if(b) bucketCounts[b.key]++; });
 
   root.appendChild(el(`<div class="grid grid-4">
-    ${kpiCard(records.length.toLocaleString(),'Total Orders','rows in this sheet',C.teal)}
-    ${kpiCard(avgMins==null?'—':fmt1(avgMins)+' min','Average Prep Time','order to delivery',C.orange)}
-    ${kpiCard(timed.length?pct(bucketCounts.fast,timed.length)+'%':'—','Delivered Within 5 min','of timed orders',C.green)}
-    ${kpiCard(timed.length?pct(bucketCounts.slow,timed.length)+'%':'—','Took Over 10 min','of timed orders',C.red)}
+    ${kpiCard(records.length.toLocaleString(),'Total Orders','rows in this sheet',C.teal,'kds:orders_by_dept')}
+    ${kpiCard(avgMins==null?'—':fmt1(avgMins)+' min','Average Prep Time','order to delivery',C.orange,'kds:avgprep_by_dept')}
+    ${kpiCard(timed.length?pct(bucketCounts.fast,timed.length)+'%':'—','Delivered Within 5 min','of timed orders',C.green,'kds:within5_by_dept')}
+    ${kpiCard(timed.length?pct(bucketCounts.slow,timed.length)+'%':'—','Took Over 10 min','of timed orders',C.red,'kds:over10_by_dept')}
   </div>`));
 
   // ---- delivery-time breakdown -------------------------------------------------------
@@ -3809,10 +3919,10 @@ function renderHourlySheet(sheetName){
   const bills = new Set(records.map(r=>r.billNo).filter(Boolean));
 
   root.appendChild(el(`<div class="grid grid-4">
-    ${kpiCard('₹'+Math.round(totalRevenue).toLocaleString(),'Net Revenue','sum of subtotal (post-discount)',C.teal)}
-    ${kpiCard(bills.size ? bills.size.toLocaleString() : records.length.toLocaleString(),'Bills','distinct bill numbers',C.blue)}
-    ${kpiCard('₹'+Math.round(totalDiscount).toLocaleString(),'Total Discount','given across the period',C.orange)}
-    ${kpiCard('₹'+Math.round(totalTax).toLocaleString(),'Total Tax','collected across the period',C.purple)}
+    ${kpiCard('₹'+Math.round(totalRevenue).toLocaleString(),'Net Revenue','sum of subtotal (post-discount)',C.teal,'hourly:revenue_by_cat')}
+    ${kpiCard(bills.size ? bills.size.toLocaleString() : records.length.toLocaleString(),'Bills','distinct bill numbers',C.blue,'hourly:bills_by_payment')}
+    ${kpiCard('₹'+Math.round(totalDiscount).toLocaleString(),'Total Discount','given across the period',C.orange,'hourly:discount_by_cat')}
+    ${kpiCard('₹'+Math.round(totalTax).toLocaleString(),'Total Tax','collected across the period',C.purple,'hourly:tax_by_cat')}
   </div>`));
 
   // ---- revenue by hour (interactive: day-of-week picker + click-a-category) --------------
@@ -3953,10 +4063,10 @@ function renderSaleDataSheet(sheetName){
   const avgRate = records.filter(r=>r.rate!=null).length ? records.filter(r=>r.rate!=null).reduce((s,r)=>s+r.rate,0)/records.filter(r=>r.rate!=null).length : null;
 
   root.appendChild(el(`<div class="grid grid-4">
-    ${kpiCard(records.length.toLocaleString(),'Items','distinct items sold',C.blue)}
-    ${kpiCard('₹'+Math.round(totalRevenue).toLocaleString(),'Net Revenue','across all items',C.teal)}
-    ${kpiCard(totalQty.toLocaleString(),'Total Quantity Sold','non-complimentary units',C.orange)}
-    ${kpiCard(avgRate==null?'—':'₹'+fmt1(avgRate),'Average Rate','per item',C.purple)}
+    ${kpiCard(records.length.toLocaleString(),'Items','distinct items sold',C.blue,'sale:items_by_revenue')}
+    ${kpiCard('₹'+Math.round(totalRevenue).toLocaleString(),'Net Revenue','across all items',C.teal,'sale:items_by_revenue')}
+    ${kpiCard(totalQty.toLocaleString(),'Total Quantity Sold','non-complimentary units',C.orange,'sale:qty_top_items')}
+    ${kpiCard(avgRate==null?'—':'₹'+fmt1(avgRate),'Average Rate','per item',C.purple,'sale:rate_top_items')}
   </div>`));
 
   const topByRevenue = [...records].sort((a,b)=>b.netAmt-a.netAmt).slice(0,15);
