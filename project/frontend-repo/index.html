@@ -3925,38 +3925,47 @@ function renderHourlySheet(sheetName){
     ${kpiCard('₹'+Math.round(totalTax).toLocaleString(),'Total Tax','collected across the period',C.purple,'hourly:tax_by_cat')}
   </div>`));
 
-  // ---- revenue by hour (interactive: day-of-week picker + click-a-category) --------------
+  // ---- revenue by hour + by day of week (interactive: custom date range, day-of-week
+  // quick-filter, and click-a-category — every figure is a real total, never an average) ---
   const withHour = records.filter(r=>r.hr!=null && r.hr>=0 && r.hr<=23);
   const DOWN = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  let hourlyDow = null;   // null = all days, else 0-6
+  const allDates = [...new Set(records.map(r=>r.dt).filter(Boolean))].sort();
+  let hourlyDateFrom = allDates.length ? allDates[0] : '';
+  let hourlyDateTo = allDates.length ? allDates[allDates.length-1] : '';
+  let hourlyDow = null;   // null = all days, else 0-6, applied on top of the date range
   let hourlyCat = null;   // null = all categories, else a category name
   let hourlyChart = null;
+  let hourlyDowChart = null;
   const HOURS = Array.from({length:24},(_,i)=>i);
 
-  function distinctDateCount(dowFilter){
-    const set = new Set();
-    records.forEach(r=>{ if(!r.dt) return; if(dowFilter!=null && r.dow!==dowFilter) return; set.add(r.dt); });
-    return set.size;
+  function inRange(r){
+    return r.dt && r.dt>=hourlyDateFrom && r.dt<=hourlyDateTo
+      && (hourlyDow==null || r.dow===hourlyDow) && (hourlyCat==null || r.cat===hourlyCat);
   }
   function redrawHourlyChart(){
-    const denom = Math.max(1, distinctDateCount(hourlyDow));
-    const matches = withHour.filter(r=>
-      (hourlyDow==null || r.dow===hourlyDow) && (hourlyCat==null || r.cat===hourlyCat));
-    const avgByHour = HOURS.map(h=>{
-      const sum = matches.filter(r=>r.hr===h).reduce((s,r)=>s+(r.subtotal||r.total||0),0);
-      return sum/denom;
-    });
+    const matches = withHour.filter(inRange);
+    const revByHour = HOURS.map(h=> matches.filter(r=>r.hr===h).reduce((s,r)=>s+(r.subtotal||r.total||0),0));
     if(hourlyChart){
-      hourlyChart.data.datasets[0].data = avgByHour;
+      hourlyChart.data.datasets[0].data = revByHour;
       hourlyChart.update();
     }else{
       hourlyChart = mkChart(document.getElementById('hourlyRevChart'), {type:'bar',
-        data:{labels:HOURS.map(h=>String(h).padStart(2,'0')+':00'), datasets:[{data:avgByHour, backgroundColor:C.blue, borderRadius:4}]},
-        options:{plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,grid:{color:'#ffffff10'},title:{display:true,text:'Avg Revenue / Day',color:'#8fa0ba'}},x:{grid:{display:false}}}}});
+        data:{labels:HOURS.map(h=>String(h).padStart(2,'0')+':00'), datasets:[{data:revByHour, backgroundColor:C.blue, borderRadius:4}]},
+        options:{plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,grid:{color:'#ffffff10'},title:{display:true,text:'Revenue',color:'#8fa0ba'}},x:{grid:{display:false}}}}});
     }
-    const dowTxt = hourlyDow==null ? 'every day' : DOWN[hourlyDow]+'s';
+    const revByDow = DOWN.map((d,i)=> records.filter(r=>r.dow===i && r.dt && r.dt>=hourlyDateFrom && r.dt<=hourlyDateTo && (hourlyCat==null||r.cat===hourlyCat)).reduce((s,r)=>s+(r.subtotal||r.total||0),0));
+    if(hourlyDowChart){
+      hourlyDowChart.data.datasets[0].data = revByDow;
+      hourlyDowChart.update();
+    }else if(document.getElementById('hourlyDowChart')){
+      hourlyDowChart = mkChart(document.getElementById('hourlyDowChart'), {type:'bar',
+        data:{labels:DOWN, datasets:[{data:revByDow, backgroundColor:C.teal, borderRadius:4}]},
+        options:{plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,grid:{color:'#ffffff10'}},x:{grid:{display:false}}}}});
+    }
+    const rangeTxt = (hourlyDateFrom===allDates[0] && hourlyDateTo===allDates[allDates.length-1]) ? 'the full period' : `${hourlyDateFrom} to ${hourlyDateTo}`;
+    const dowTxt = hourlyDow==null ? '' : `, ${DOWN[hourlyDow]}s only`;
     const catTxt = hourlyCat==null ? 'all categories' : hourlyCat;
-    document.getElementById('hourlySelSummary').textContent = `Showing average hourly revenue for ${dowTxt} · ${catTxt}`;
+    document.getElementById('hourlySelSummary').textContent = `Showing actual total revenue for ${rangeTxt}${dowTxt} · ${catTxt}`;
     document.querySelectorAll('.hourly-dow-btn').forEach(b=>{
       const v = b.getAttribute('data-dow');
       b.classList.toggle('active', (v==='all' && hourlyDow==null) || (v!=='all' && Number(v)===hourlyDow));
@@ -3966,7 +3975,16 @@ function renderHourlySheet(sheetName){
     });
   }
   if(withHour.length){
-    root.appendChild(el(`<h3 class="section-title">Revenue by Hour <span class="section-sub">click a day or a category below to filter — this recalculates instantly</span></h3>`));
+    root.appendChild(el(`<h3 class="section-title">Revenue by Hour <span class="section-sub">pick a date range, click a day or a category below — this recalculates instantly, always as a real total</span></h3>`));
+    root.appendChild(el(`<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+      <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;">From
+        <input type="date" id="hourlyDateFrom" class="action-btn" style="cursor:pointer;" value="${hourlyDateFrom}" min="${allDates[0]||''}" max="${allDates[allDates.length-1]||''}">
+      </label>
+      <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;">To
+        <input type="date" id="hourlyDateTo" class="action-btn" style="cursor:pointer;" value="${hourlyDateTo}" min="${allDates[0]||''}" max="${allDates[allDates.length-1]||''}">
+      </label>
+      <button class="reset-btn" id="hourlyDateReset">Reset to full period</button>
+    </div>`));
     root.appendChild(el(`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
       <button class="band-tab hourly-dow-btn active" data-dow="all">All days</button>
       ${DOWN.map((d,i)=>`<button class="band-tab hourly-dow-btn" data-dow="${i}">${d}</button>`).join('')}
@@ -3975,22 +3993,29 @@ function renderHourlySheet(sheetName){
       <div id="hourlySelSummary" style="font-size:12px;color:var(--muted);margin-bottom:8px;"></div>
       <div class="chart-wrap"><canvas id="hourlyRevChart"></canvas></div>
     </div>`));
-    redrawHourlyChart();
     document.querySelectorAll('.hourly-dow-btn').forEach(b=>{
       b.onclick = ()=>{ const v = b.getAttribute('data-dow'); hourlyDow = v==='all' ? null : Number(v); redrawHourlyChart(); };
     });
   }
 
-  // ---- revenue by day of week -------------------------------------------------------
+  // ---- revenue by day of week (recomputed by redrawHourlyChart above, same date range) --
   const withDow = records.filter(r=>r.dow!=null);
   if(withDow.length){
-    const DOWN = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    const revByDow = DOWN.map((d,i)=>withDow.filter(r=>r.dow===i).reduce((s,r)=>s+(r.subtotal||r.total||0),0));
-    root.appendChild(el(`<h3 class="section-title">Revenue by Day of Week</h3>`));
+    root.appendChild(el(`<h3 class="section-title">Revenue by Day of Week <span class="section-sub">within the date range selected above</span></h3>`));
     root.appendChild(el(`<div class="card"><div class="chart-wrap short"><canvas id="hourlyDowChart"></canvas></div></div>`));
-    mkChart(document.getElementById('hourlyDowChart'), {type:'bar',
-      data:{labels:DOWN, datasets:[{data:revByDow, backgroundColor:C.teal, borderRadius:4}]},
-      options:{plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true,grid:{color:'#ffffff10'}},x:{grid:{display:false}}}}});
+  }
+  if(withHour.length || withDow.length){
+    redrawHourlyChart();
+    const fromInput = document.getElementById('hourlyDateFrom'), toInput = document.getElementById('hourlyDateTo');
+    if(fromInput) fromInput.onchange = ()=>{ hourlyDateFrom = fromInput.value || allDates[0]; redrawHourlyChart(); };
+    if(toInput) toInput.onchange = ()=>{ hourlyDateTo = toInput.value || allDates[allDates.length-1]; redrawHourlyChart(); };
+    const resetBtn = document.getElementById('hourlyDateReset');
+    if(resetBtn) resetBtn.onclick = ()=>{
+      hourlyDateFrom = allDates[0]; hourlyDateTo = allDates[allDates.length-1];
+      if(fromInput) fromInput.value = hourlyDateFrom;
+      if(toInput) toInput.value = hourlyDateTo;
+      redrawHourlyChart();
+    };
   }
 
   // ---- category breakdown -----------------------------------------------------------
