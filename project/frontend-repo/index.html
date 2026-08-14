@@ -4475,14 +4475,15 @@ function mapRowsToKds(rawRows){
     const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
     // Category and department are reconciled against 7 Midway Plaza's own reference sheet
-    // whenever the item is listed there, so both always match the restaurant's real
-    // taxonomy exactly rather than however this particular export happened to label them —
-    // the raw sheet's own value is only used as a fallback for items the reference doesn't cover.
+    // whenever the item is listed there — each pulled straight from that item's own row, never
+    // cross-derived from the other. An item the reference sheet doesn't cover has no
+    // reference-backed department at all, so it's left unassigned rather than guessed at via
+    // its category, or filled in with a raw station label (like "Kitchen"/"DOSA") that was
+    // never one of the restaurant's actual named departments.
     const rawCat = txt(col.category) || 'Uncategorised';
-    const rawDept = txt(col.department);
     const ref = KDS_REF_BY_ITEM[kdsNormName(item || '')];
     const cat = (ref && ref.cat) || rawCat;
-    const dept = (ref && ref.dept) || rawDept;
+    const dept = (ref && ref.dept) || null;
 
     records.push({
       item: item || 'Unspecified item',
