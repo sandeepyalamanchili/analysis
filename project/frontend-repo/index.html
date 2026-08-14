@@ -3092,7 +3092,7 @@ async function handleFiles(fileList){
         sheets = await parseFileInBrowser(f);
       }catch(err2){
         console.error('Failed to parse', f.name, err2);
-        failures.push(f.name);
+        failures.push(f.name + ' (' + (err2 && err2.message ? err2.message : 'unknown error') + ')');
         continue;
       }
     }
