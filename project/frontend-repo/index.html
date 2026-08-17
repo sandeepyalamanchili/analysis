@@ -332,8 +332,8 @@ input[type=range]{accent-color:var(--orange);width:120px;}
   <div style="max-width:760px;width:100%;">
     <div style="text-align:center;margin-bottom:28px;">
       <div style="font-size:34px;margin-bottom:10px;">📂</div>
-      <h1 style="font-size:21px;margin-bottom:8px;">Which file would you like to look at?</h1>
-      <p style="color:var(--muted);font-size:13.5px;">You uploaded several files — pick a sheet below to open its dashboard. You can switch between all of them anytime from the "📑 Sheet" button at the top once you're in.</p>
+      <h1 style="font-size:21px;margin-bottom:8px;">Which branch would you like to open?</h1>
+      <p style="color:var(--muted);font-size:13.5px;">Pick any sheet below to open its dashboard. You can switch branches anytime from the "🏢 Branch" button at the top, and move between that branch's sheets with "📑 Sheet".</p>
     </div>
     <div id="fileChooserList"></div>
   </div>
@@ -356,6 +356,10 @@ input[type=range]{accent-color:var(--orange);width:120px;}
       </div>
     </div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <div id="branchSelectorWrap" style="display:none;position:relative;">
+        <button class="action-btn" id="branchSelectorBtn" style="cursor:pointer;">🏢 <span id="branchSelectorLabel">Branch</span></button>
+        <div id="branchSelectorPanel" class="filter-panel" style="min-width:260px;"></div>
+      </div>
       <div id="sheetSelectorWrap" style="display:none;position:relative;">
         <button class="action-btn" id="sheetSelectorBtn" style="cursor:pointer;">📑 <span id="sheetSelectorLabel">Sheet</span></button>
         <div id="sheetSelectorPanel" class="filter-panel" style="min-width:300px;"></div>
@@ -2810,6 +2814,7 @@ function showUploadStatus(msg){ document.getElementById('uploadStatusText').text
 
 let SOURCE_FILENAME = '';
 let SHEET_SOURCE_FILE = {};   // { qualifiedSheetName: originalFileName } — only populated on a multi-file upload
+let BRANCH_OF_SHEET = {};     // { sheetName: branchName } — read from the data, not the file name
 let CUSTOM_BRAND_NAME = null; // user-set override; null means "derive automatically from the data"
 let SHEET_DATA = {};          // { sheetName: recordsArray } — one independent dashboard per usable sheet
 let SHEET_MODE = {};          // { sheetName: 'guest_feedback' | 'generic' }
@@ -2960,6 +2965,65 @@ function getUploadWorker(){
 // entries (from either the worker or the main-thread fallback) and does the column
 // mapping/validation pass, one sheet at a time with a yield in between so a large workbook
 // never blocks the page for long even on this side.
+// Words that describe the export or the company rather than a branch. Anything left after
+// these are removed is treated as the branch's actual name.
+const BRANCH_STOPWORDS = new Set(['qr','code','qrcode','scan','table','no','nos','number','report','reports',
+  'data','export','final','copy','sheet','sheets','dashboard','summary','detail','details','billwise',
+  'settlement','hourly','sale','sales','item','items','category','categories','kds','kd','kds\'s','google',
+  'reviews','review','responses','response','feedback','guest','survey','food','court','seven','foodseven',
+  'outlet','branch','store','unit','plaza','the','and','of','for','to','from','main','pos','daily','weekly',
+  'monthly','prep','preparation','time','minutes','mins','master','list','combine','people']);
+function cleanBranchCandidate(raw){
+  if(raw==null) return '';
+  let s = String(raw);
+  // Channel values look like "Qr code suryapet - table no.19" — everything from the table
+  // marker onwards is per-table detail, not part of the branch.
+  s = s.replace(/[-–—]?\s*table\s*n?o?\.?\s*\d+.*$/i, ' ');
+  s = s.replace(/[_\-–—.,/()]+/g, ' ');
+  const words = s.split(/\s+/).filter(w=>{
+    const t = w.replace(/[^a-z0-9]/gi,'').toLowerCase();
+    if(!t) return false;
+    if(BRANCH_STOPWORDS.has(t)) return false;
+    if(/^\d+$/.test(t)) return false;          // date fragments and outlet numbering
+    if(t.length < 3) return false;             // stray initials left over from report codes
+    return true;
+  });
+  return words.join(' ').replace(/\s+/g,' ').trim();
+}
+function titleCaseBranch(s){
+  return String(s||'').toLowerCase().replace(/\b\w/g, ch=>ch.toUpperCase()).trim();
+}
+// Looks inside one sheet for the branch it belongs to: first any column that names a
+// branch/outlet/channel, then the sheet's own name. Returns '' when the sheet carries no
+// branch signal at all (a plain POS export usually doesn't) so a sibling sheet can supply it.
+function detectBranchFromSheet(sheetName, rawRows){
+  const votes = {};
+  const add = (val, weight)=>{
+    const c = cleanBranchCandidate(val);
+    if(!c) return;
+    const key = c.toLowerCase();
+    votes[key] = (votes[key]||0) + weight;
+  };
+  const cols = rawRows && rawRows.length ? Object.keys(rawRows[0]||{}) : [];
+  const branchCol = findCol(cols, ['branch','outlet','location','store name','store','property','channel name','channel','venue','site']);
+  if(branchCol){
+    // Sampled rather than scanned in full: this only needs the dominant value, and these
+    // files run to hundreds of thousands of rows.
+    const seen = {};
+    const step = Math.max(1, Math.floor(rawRows.length/500));
+    for(let i=0;i<rawRows.length;i+=step){
+      const v = rawRows[i][branchCol];
+      if(v==null || v==='') continue;
+      const k = String(v);
+      seen[k] = (seen[k]||0)+1;
+    }
+    Object.keys(seen).forEach(k=>add(k, 3 * seen[k]));
+  }
+  add(sheetName, 1);
+  let best = '', top = 0;
+  Object.keys(votes).forEach(k=>{ if(votes[k] > top){ top = votes[k]; best = k; } });
+  return titleCaseBranch(best);
+}
 async function finishMappingSheets(parsedSheets){
   try{
     const sheetData = {};
@@ -2972,11 +3036,20 @@ async function finishMappingSheets(parsedSheets){
     const saleSheetData = {};
     const rawRowsBySheet = {};
     const guestDupCountBySheet = {};
+    const branchVotesByFile = {};   // sourceFile -> { branchName: weight }
+    const detectedBranchBySheet = {};
     const sheetNamesOrdered = [];
     for(let sIdx=0; sIdx<parsedSheets.length; sIdx++){
       const {sheetName, rowsArray, rawRows} = parsedSheets[sIdx];
       if(parsedSheets.length>1) showUploadStatus(`Mapping sheet ${sIdx+1} of ${parsedSheets.length}: ${sheetName}…`);
       await yieldToUI();
+      const detected = detectBranchFromSheet(sheetName, rawRows);
+      detectedBranchBySheet[sheetName] = detected;
+      if(detected){
+        const src = SHEET_SOURCE_FILE[sheetName] || '';
+        branchVotesByFile[src] = branchVotesByFile[src] || {};
+        branchVotesByFile[src][detected] = (branchVotesByFile[src][detected]||0) + 1;
+      }
       const ratingParsed = rowsArray && rowsArray.length ? parseRatingSheet(sheetName, rowsArray) : null;
       if(assessRatingConfidence(ratingParsed)){
         ratingSheetData[sheetName] = ratingParsed;
@@ -3047,6 +3120,17 @@ async function finishMappingSheets(parsedSheets){
     HOURLY_SHEET_DATA = hourlySheetData;
     SALE_SHEET_DATA = saleSheetData;
     RAW_ROWS_BY_SHEET = rawRowsBySheet;
+    // A POS export ("Sale Data 7", "Hourly Data 7") usually carries no branch of its own, so
+    // each file settles on the branch its sheets agreed on most often and every sheet in that
+    // file adopts it. The file name is only used when the data names no branch anywhere.
+    BRANCH_OF_SHEET = {};
+    sheetNamesOrdered.forEach(n=>{
+      const src = SHEET_SOURCE_FILE[n] || '';
+      const votes = branchVotesByFile[src] || {};
+      let winner = '', top = 0;
+      Object.keys(votes).forEach(k=>{ if(votes[k] > top){ top = votes[k]; winner = k; } });
+      BRANCH_OF_SHEET[n] = winner || detectedBranchBySheet[n] || branchNameFromFile(src) || '';
+    });
     GUEST_DUP_COUNT_BY_SHEET = guestDupCountBySheet;
     SHEET_NAMES_ORDERED = sheetNamesOrdered;
     if(Object.keys(SHEET_SOURCE_FILE).length){
@@ -3142,11 +3226,21 @@ async function handleFiles(fileList){
   SHEET_SOURCE_FILE = {};
   let combined = [];
   let failures = [];
-  // Files are read concurrently rather than one after another — each one's work is fully
-  // independent, so waiting for file 1 to finish before starting file 2 was pure dead time.
+  // Files are read concurrently rather than one after another, but only a couple at a time:
+  // each parse holds the whole workbook in memory, so firing ten 50 MB files at once is how
+  // the tab (or the server) runs out of memory and every file fails together.
   showUploadStatus(`Reading ${files.length} files…`);
   await yieldToUI();
-  const settled = await Promise.all(files.map(async f=>{
+  // Up to 10 files are read at the same time. The cap on how many actually run together is
+  // bytes, not just a count: each in-flight parse holds a whole workbook in memory, so ten
+  // small branch exports genuinely run ten-wide, while a handful of very large ones step
+  // down automatically rather than exhausting memory and failing the entire batch — which is
+  // what happened when everything was fired off at once.
+  const MAX_CONCURRENCY = 10;
+  const MAX_BYTES_IN_FLIGHT = 60 * 1024 * 1024;
+  const settled = new Array(files.length);
+  let cursor = 0, done = 0, bytesInFlight = 0, running = 0;
+  async function readOne(f){
     try{
       return {f, sheets: BACKEND.available ? await gatherParsedSheetsViaBackend(f) : await parseFileInBrowser(f)};
     }catch(err){
@@ -3158,13 +3252,47 @@ async function handleFiles(fileList){
         return {f, error: (err2 && err2.message) ? err2.message : 'unknown error'};
       }
     }
-  }));
+  }
+  await new Promise(resolve=>{
+    function pump(){
+      while(cursor < files.length && running < MAX_CONCURRENCY){
+        const size = files[cursor].size || 0;
+        // Always let at least one file through, however big it is, so an oversized file
+        // still gets read (on its own) instead of the batch stalling forever.
+        if(running > 0 && bytesInFlight + size > MAX_BYTES_IN_FLIGHT) break;
+        const i = cursor++;
+        running++; bytesInFlight += size;
+        readOne(files[i]).then(res=>{
+          settled[i] = res;
+          running--; bytesInFlight -= size; done++;
+          showUploadStatus(`Read ${done} of ${files.length} files…`);
+          if(done === files.length) resolve(); else pump();
+        });
+      }
+      if(cursor >= files.length && running === 0) resolve();
+    }
+    pump();
+  });
+  await yieldToUI();
   // Collected in the original file order, not whichever finished first, so the sheet list
   // still matches the order the person picked the files in.
-  settled.forEach(({f, sheets, error})=>{
+  // Selecting the same file twice (easy to do across two folders, or a re-download named
+  // "Suryapet (1).xlsx") would otherwise create a second identical branch with identical
+  // sheets — visible duplication of an entire branch, not just a row.
+  const seenFiles = new Set();
+  settled.forEach(entry=>{
+    if(!entry) return;
+    const {f, sheets, error} = entry;
     if(error){ failures.push(f.name + ' (' + error + ')'); return; }
+    const sig = f.name + '|' + f.size;
+    if(seenFiles.has(sig)) return;
+    seenFiles.add(sig);
     sheets.forEach(s=>{
-      const qualifiedName = `${f.name} — ${s.sheetName}`;
+      let qualifiedName = `${f.name} — ${s.sheetName}`;
+      // Two different branches can easily use the same internal sheet names, so if a name is
+      // somehow still taken, disambiguate rather than silently overwriting the earlier sheet.
+      let dedupe = 2;
+      while(SHEET_SOURCE_FILE[qualifiedName]) qualifiedName = `${f.name} — ${s.sheetName} (${dedupe++})`;
       SHEET_SOURCE_FILE[qualifiedName] = f.name;
       combined.push({...s, sheetName: qualifiedName});
     });
@@ -4225,6 +4353,7 @@ function switchToSheet(sheetName){
   const mode = SHEET_MODE[sheetName];
   CURRENT_SHEET_NAME = sheetName;
   buildSheetSelector();
+  buildBranchSelector();
   if(mode === 'generic'){
     renderGenericSheet(sheetName);
     return;
@@ -4282,9 +4411,9 @@ function showFileChooserScreen(){
   const screen = document.getElementById('fileChooserScreen');
   screen.style.display = 'flex';
 
-  const groups = new Map(); // fileLabel -> [sheetName...]
+  const groups = new Map(); // branchLabel -> [sheetName...]
   SHEET_NAMES_ORDERED.forEach(n=>{
-    const g = SHEET_SOURCE_FILE[n] || '';
+    const g = branchOfSheet(n) || '';
     if(!groups.has(g)) groups.set(g, []);
     groups.get(g).push(n);
   });
@@ -4303,7 +4432,7 @@ function showFileChooserScreen(){
 
   document.getElementById('fileChooserList').innerHTML = [...groups.entries()].map(([fileLabel, names])=>`
     <div class="card" style="margin-bottom:14px;">
-      <div class="card-title" style="margin-bottom:10px;">📁 ${escapeHtml(fileLabel || 'This file')} <span class="section-sub">${names.length} sheet${names.length===1?'':'s'} found</span></div>
+      <div class="card-title" style="margin-bottom:10px;">🏢 ${escapeHtml(fileLabel || 'This file')} <span class="section-sub">${names.length} sheet${names.length===1?'':'s'} found</span></div>
       ${names.map(rowHtml).join('')}
     </div>`).join('');
 
@@ -4315,6 +4444,88 @@ function showFileChooserScreen(){
     };
   });
 }
+// Each uploaded file is one branch's export, so the branch name is derived from the file
+// name — with the extension, date ranges and boilerplate words ("reports", "data", "final",
+// a trailing "(1)" from a re-download) stripped out, since those describe the export rather
+// than the branch. "Suryapet Reports 01-Apr to 09 Aug.xlsx" becomes "Suryapet".
+function branchNameFromFile(fileName){
+  if(!fileName) return '';
+  let s = String(fileName).replace(/\.[a-z0-9]+$/i, '');
+  s = s.replace(/[_]+/g, ' ');
+  s = s.replace(/\(\s*\d+\s*\)\s*$/, '');
+  // Month names go first, together with any day number attached to them, so that ranges
+  // like "01-Apr to 09 Aug" disappear entirely instead of leaving a stray "09" behind.
+  s = s.replace(/\d{1,2}\s*[-–/.]?\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*/gi, ' ');
+  s = s.replace(/(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s*[-–/.]?\s*\d{1,4}/gi, ' ');
+  s = s.replace(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\b/gi, ' ');
+  s = s.replace(/\b\d{1,2}\s*(?:to|[-–—])\s*\d{1,2}\b/gi, ' ');
+  s = s.replace(/\b\d{1,2}[-\/.]\d{1,2}([-\/.]\d{2,4})?\b/g, ' ');
+  s = s.replace(/\b(20\d{2}|19\d{2})\b/g, ' ');
+  s = s.replace(/\b(reports?|data|export|final|copy|sheet|dashboard|to|from)\b/gi, ' ');
+  // Any bare number left over is part of the date range, not the branch name — but a name
+  // that is only digits (a numbered outlet) is kept rather than erased to nothing.
+  const withoutNumbers = s.replace(/\b\d{1,4}\b/g, ' ').replace(/\s+/g,' ').trim();
+  if(withoutNumbers) s = withoutNumbers;
+  s = s.replace(/[-–—]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if(!s) s = String(fileName).replace(/\.[a-z0-9]+$/i, '').trim();
+  return s.replace(/\b\w/g, ch=>ch.toUpperCase());
+}
+function branchOfSheet(n){
+  if(BRANCH_OF_SHEET && BRANCH_OF_SHEET[n]) return BRANCH_OF_SHEET[n];
+  const f = SHEET_SOURCE_FILE[n];
+  return f ? (branchNameFromFile(f) || f) : '';
+}
+function buildBranchSelector(){
+  const wrap = document.getElementById('branchSelectorWrap');
+  const panel = document.getElementById('branchSelectorPanel');
+  const branches = [];
+  SHEET_NAMES_ORDERED.forEach(n=>{
+    const b = branchOfSheet(n);
+    if(b && branches.indexOf(b) === -1) branches.push(b);
+  });
+  // Only meaningful once more than one branch is loaded; a single-branch upload keeps the
+  // header uncluttered rather than showing a picker with one entry in it.
+  if(branches.length <= 1){ wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  const current = branchOfSheet(CURRENT_SHEET_NAME);
+  document.getElementById('branchSelectorLabel').textContent = current || 'Branch';
+
+  panel.innerHTML = branches.map(b=>{
+    const sheets = SHEET_NAMES_ORDERED.filter(n=>branchOfSheet(n)===b);
+    const active = b === current;
+    return `<div class="sheet-opt${active?' active':''}" data-branch="${escapeHtml(b)}">
+      <span class="sheet-opt-icon">🏢</span>
+      <span class="sheet-opt-body">
+        <span class="sheet-opt-name">${escapeHtml(b)}</span>
+        <span class="sheet-opt-meta">${sheets.length} sheet${sheets.length===1?'':'s'}</span>
+      </span>
+      ${active?'<span class="sheet-opt-check">✓</span>':''}
+    </div>`;
+  }).join('');
+
+  panel.querySelectorAll('[data-branch]').forEach(opt=>{
+    opt.onclick = (e)=>{
+      e.stopPropagation();
+      const b = opt.getAttribute('data-branch');
+      // Switching branch keeps you on the same kind of report you were already reading —
+      // jumping from one branch's KDS view to another branch's guest survey would look like
+      // the dashboard had lost your place.
+      const wanted = SHEET_MODE[CURRENT_SHEET_NAME];
+      const inBranch = SHEET_NAMES_ORDERED.filter(n=>branchOfSheet(n)===b);
+      const target = inBranch.find(n=>SHEET_MODE[n]===wanted) || inBranch[0];
+      panel.classList.remove('open');
+      if(target) switchToSheet(target);
+    };
+  });
+}
+document.getElementById('branchSelectorBtn').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  const panel = document.getElementById('branchSelectorPanel');
+  const isOpen = panel.classList.contains('open');
+  document.querySelectorAll('.filter-panel').forEach(p=>p.classList.remove('open'));
+  if(!isOpen) panel.classList.add('open');
+});
+document.getElementById('branchSelectorPanel').addEventListener('click', (e)=>e.stopPropagation());
 function buildSheetSelector(){
   const wrap = document.getElementById('sheetSelectorWrap');
   const btn = document.getElementById('sheetSelectorBtn');
@@ -4323,11 +4534,11 @@ function buildSheetSelector(){
   wrap.style.display = 'block';
   document.getElementById('sheetSelectorLabel').textContent = sheetDisplayName(CURRENT_SHEET_NAME);
 
-  // Group sheets by source file when this came from a multi-file upload — otherwise
-  // everything sits under one implicit group so the layout is identical to before.
-  const groups = new Map(); // fileLabel -> [sheetName...]
+  // Grouped by branch when several were uploaded — the heading is the branch name rather
+  // than the raw file name, which is noisy and repeats the date range on every group.
+  const groups = new Map(); // branchLabel -> [sheetName...]
   SHEET_NAMES_ORDERED.forEach(n=>{
-    const g = SHEET_SOURCE_FILE[n] || '';
+    const g = branchOfSheet(n) || '';
     if(!groups.has(g)) groups.set(g, []);
     groups.get(g).push(n);
   });
@@ -4346,7 +4557,7 @@ function buildSheetSelector(){
   };
 
   panel.innerHTML = [...groups.entries()].map(([fileLabel, names])=>{
-    const heading = fileLabel ? `<div class="sheet-group-heading">📁 ${escapeHtml(fileLabel)}</div>` : '';
+    const heading = fileLabel ? `<div class="sheet-group-heading">🏢 ${escapeHtml(fileLabel)}</div>` : '';
     return heading + names.map(rowHtml).join('');
   }).join('');
 
@@ -4953,6 +5164,15 @@ function mapRowsToSaleSummary(rawRows){
     const item = txt(col.item);
     const netAmt = num(col.netAmt);
     if(!item) return;
+    // Exports that concatenate several report blocks repeat their header and totals lines in
+    // the middle of the data. Those rows carry a value in the item column ("Item Name",
+    // "Grand Total", "Sub Total", a section heading) and would otherwise each be counted as
+    // a distinct product, inflating the item count well past what the store actually sells.
+    const flat = item.replace(/\s+/g,' ').trim().toLowerCase();
+    const headerName = col.item ? String(col.item).replace(/\s+/g,' ').trim().toLowerCase() : '';
+    if(flat === headerName) return;
+    if(/^(grand\s*total|sub\s*total|subtotal|total|totals|item\s*name|item|items|category|categor(y|ies)\s*total|section|summary|report|page\s*\d+|s\.?\s*no\.?|number)$/.test(flat)) return;
+    if(/^-+$/.test(flat) || flat === 'na' || flat === 'n/a') return;
     rawRecords.push({ item, rate: num(col.rate), qty: num(col.qty) ?? 0, netAmt: netAmt ?? 0 });
   });
   // The same item name can appear on several separate rows in this export — split by some
@@ -6173,7 +6393,7 @@ function downloadDashboard(){
     : modeForGuard==='rating_summary' ? !!(RATING_SHEET_DATA[CURRENT_SHEET_NAME] && RATING_SHEET_DATA[CURRENT_SHEET_NAME].order.length)
     : RECORDS.length;
   if(!hasData){ alert('Upload a file first.'); return; }
-  const payload = { sheetData: SHEET_DATA, sheetMode: SHEET_MODE, genericSheetData: GENERIC_SHEET_DATA, googleSheetData: GOOGLE_SHEET_DATA, ratingSheetData: RATING_SHEET_DATA, sheetNamesOrdered: SHEET_NAMES_ORDERED, sheetSourceFile: SHEET_SOURCE_FILE, currentSheetName: CURRENT_SHEET_NAME, filterState: serializeFilterState() };
+  const payload = { sheetData: SHEET_DATA, sheetMode: SHEET_MODE, genericSheetData: GENERIC_SHEET_DATA, googleSheetData: GOOGLE_SHEET_DATA, ratingSheetData: RATING_SHEET_DATA, sheetNamesOrdered: SHEET_NAMES_ORDERED, sheetSourceFile: SHEET_SOURCE_FILE, branchOfSheet: BRANCH_OF_SHEET, currentSheetName: CURRENT_SHEET_NAME, filterState: serializeFilterState() };
   const jsonStr = JSON.stringify(payload).replace(/</g, '\\u003c');
 
   let html = TEMPLATE_SOURCE.replace(/^var INITIAL_PAYLOAD = null;$/m, ()=> 'var INITIAL_PAYLOAD = ' + jsonStr + ';');
@@ -6226,6 +6446,7 @@ if(INITIAL_PAYLOAD && INITIAL_PAYLOAD.sheetNamesOrdered && INITIAL_PAYLOAD.sheet
   RATING_SHEET_DATA = INITIAL_PAYLOAD.ratingSheetData || {};
   SHEET_NAMES_ORDERED = INITIAL_PAYLOAD.sheetNamesOrdered;
   SHEET_SOURCE_FILE = INITIAL_PAYLOAD.sheetSourceFile || {};
+  BRANCH_OF_SHEET = INITIAL_PAYLOAD.branchOfSheet || {};
   const wantedSheet = INITIAL_PAYLOAD.currentSheetName;
   const restoreSheetName = (wantedSheet && SHEET_NAMES_ORDERED.indexOf(wantedSheet)>=0) ? wantedSheet : SHEET_NAMES_ORDERED[0];
   SOURCE_FILENAME = (INITIAL_PAYLOAD.filterState && INITIAL_PAYLOAD.filterState.sourceFilename) || '';
