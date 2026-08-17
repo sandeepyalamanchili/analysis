@@ -37,7 +37,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 HERE = os.path.dirname(os.path.abspath(__file__))
 DASHBOARD_FILE = os.path.join(HERE, "dashboard.html")
 DEFAULT_PORT = 8765
-MAX_UPLOAD_BYTES = 512 * 1024 * 1024        # 512 MB
+MAX_UPLOAD_BYTES = 80 * 1024 * 1024         # 80 MB. Deliberately well under the instance's
+                                            # own memory: the raw bytes are held in memory,
+                                            # the parse allocates several times that again,
+                                            # and cached sheet payloads are held on top. A
+                                            # 512 MB limit on a 512 MB box guarantees a crash.
 MAX_CACHED_WORKBOOKS = 3                     # keep memory bounded
 
 # When this backend is deployed separately from the dashboard page (e.g. this on Render,
@@ -275,11 +279,22 @@ class Handler(BaseHTTPRequestHandler):
             if idx in entry["cache"]:
                 payload = entry["cache"][idx]
             else:
-                try:
-                    payload = build_sheet_payload(entry["data"], idx)
-                except Exception as e:
-                    self._json(500, {"error": f"Could not read that sheet: {e}"}); return
-                entry["cache"][idx] = payload
+                # The browser now requests a file's sheets concurrently. Without this lock
+                # each of those requests would independently re-parse the entire workbook
+                # from raw bytes at the same time — on a 49 MB export that is several
+                # hundred MB of duplicated work in flight at once, which is exactly how a
+                # 512 MB instance runs out of memory. Serializing per upload keeps peak
+                # memory to a single parse; the cache re-check inside the lock means the
+                # requests that queued behind it get the finished result for free.
+                with entry["lock"]:
+                    if idx in entry["cache"]:
+                        payload = entry["cache"][idx]
+                    else:
+                        try:
+                            payload = build_sheet_payload(entry["data"], idx)
+                        except Exception as e:
+                            self._json(500, {"error": f"Could not read that sheet: {e}"}); return
+                        entry["cache"][idx] = payload
             self._json(200, {"sheetName": entry["sheets"][idx], **payload})
             return
         self._send(404, b"Not found", "text/plain")
@@ -317,7 +332,7 @@ class Handler(BaseHTTPRequestHandler):
 
         wid = uuid.uuid4().hex
         with LOCK:
-            WORKBOOKS[wid] = {"data": data, "sheets": names, "cache": {}}
+            WORKBOOKS[wid] = {"data": data, "sheets": names, "cache": {}, "lock": threading.Lock()}
             WORKBOOK_ORDER.append(wid)
             while len(WORKBOOK_ORDER) > MAX_CACHED_WORKBOOKS:
                 WORKBOOKS.pop(WORKBOOK_ORDER.pop(0), None)

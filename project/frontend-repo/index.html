@@ -4679,6 +4679,8 @@ function mapRowsToKds(rawRows){
     category:     claim(['category name','item category','sub category','subcategory','category','group','menu group']),
     department:   claim(['department','dept','station','kitchen','counter','section','outlet section','prep area']),
     qty:          claim(['quantity','qty','nos','count']),
+    billNo:       claim(['bill no','bill number','invoice no','invoice number','bill']),
+    kotNo:        claim(['kot no','kot number','ticket no','token no','kot']),
     status:       claim(['status','order status','state']),
     date:         claim(['order date','date','business date','day']),
     table:        claim(['table no','table number','table']),
@@ -4731,6 +4733,8 @@ function mapRowsToKds(rawRows){
       dept,           // null when neither the reference sheet nor this row's own column has one
       mins,
       qty: num(col.qty) ?? 1,
+      billNo: txt(col.billNo),
+      kotNo: txt(col.kotNo),
       status: txt(col.status),
       tb: col.table ? num(col.table) : null,
       st: col.steward ? txt(col.steward) : null,
@@ -4740,8 +4744,18 @@ function mapRowsToKds(rawRows){
       hr: t0 ? t0.getHours() : (when ? when.getHours() : null),
     });
   });
-  const kdsDeduped = mergeExactDuplicates(records,
-    r => [r.item, r.cat, r.dept, r.dt, r.hr, r.mins, r.qty, r.tb, r.st]);
+  // Two separate guests ordering the same item, at the same hour, with the same prep time
+  // is completely routine in a busy kitchen — merging on those attributes alone silently
+  // deletes real orders (measured at ~9% of this data). So a row is only ever treated as a
+  // duplicate when the export's own unique order identifiers (bill number / KOT number)
+  // match as well. If neither identifier column exists, nothing is merged at all: an
+  // unverifiable guess that destroys real orders is far worse than leaving a stray
+  // double-export in place.
+  const kdsHasIds = records.some(r=>r.billNo || r.kotNo);
+  const kdsDeduped = kdsHasIds
+    ? mergeExactDuplicates(records,
+        r => [r.billNo, r.kotNo, r.item, r.dt, r.hr, r.mins, r.qty])
+    : { records, mergedCount: 0 };
   KDS_MERGED_DUP_COUNT = kdsDeduped.mergedCount;
   return kdsDeduped.records;
 }
@@ -4799,6 +4813,7 @@ function mapRowsToHourly(rawRows){
   // generic 'total' and 'product item' patterns, since "Subtotal" and "Product Item
   // Number" would otherwise satisfy those broader patterns too and get grabbed first.
   const col = {
+    lineNo:      claim(['s.no','s no','sno','serial no','serial number','sl no']),
     billNo:      claim(['bill no','bill number','invoice no','invoice number']),
     date:        claim(['date','order date','business date','bill date']),
     subtotal:    claim(['subtotal','sub total']),
@@ -4834,6 +4849,7 @@ function mapRowsToHourly(rawRows){
       cat: txt(col.category) || 'Uncategorised',
       superCat: txt(col.superCat),
       section: txt(col.section),
+      lineNo: txt(col.lineNo),
       billNo: txt(col.billNo),
       paymentMode: txt(col.paymentMode) || 'Unspecified',
       total: total ?? 0,
@@ -4846,8 +4862,14 @@ function mapRowsToHourly(rawRows){
       dt: when ? when.toISOString().slice(0,10) : '',
     });
   });
-  const hourlyDeduped = mergeExactDuplicates(records,
-    r => [r.item, r.billNo, r.dt, r.hr, r.total, r.subtotal, r.discount, r.tax, r.paymentMode, r.cat]);
+  // Same principle as KDS: a bill legitimately repeats the same item at the same price, so
+  // merging on attributes alone deletes real sales. Only rows sharing the export's own
+  // unique identifiers are candidates, and with no identifier column nothing is merged.
+  const hourlyHasIds = records.some(r=>r.lineNo || r.billNo);
+  const hourlyDeduped = hourlyHasIds
+    ? mergeExactDuplicates(records,
+        r => [r.lineNo, r.billNo, r.item, r.dt, r.hr, r.total, r.subtotal, r.discount, r.tax])
+    : { records, mergedCount: 0 };
   HOURLY_MERGED_DUP_COUNT = hourlyDeduped.mergedCount;
   return hourlyDeduped.records;
 }
@@ -5464,7 +5486,7 @@ function buildRecordsForSegment(segRawRows, col){
     const hasAnyText = [col.comments, col.complaint, col.goodItems, col.improveItems].some(c=>txt(c));
     if(sp==null && fr==null && ci==null && fd==null && cf==null && !hasAnyText) return;
 
-    let dt='', dy='', hr=null;
+    let dt='', dy='', hr=null, ts='';
     if(col.submitted){
       const raw = r[col.submitted];
       const d = raw instanceof Date ? raw : new Date(raw);
@@ -5475,6 +5497,10 @@ function buildRecordsForSegment(segRawRows, col){
         const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
         dy = days[d.getDay()]+' '+pad(d.getDate())+' '+months[d.getMonth()];
         hr = d.getHours();
+        // Full precision kept separately from the display fields: dt/hr are deliberately
+        // coarse for grouping, but duplicate detection needs to tell two genuine responses
+        // submitted in the same hour apart from one response exported twice.
+        ts = String(d.getTime());
       }
     }
 
@@ -5485,7 +5511,7 @@ function buildRecordsForSegment(segRawRows, col){
       ml: txt(col.meal) || 'Unspecified',
       tt: txt(col.tableType) || 'Unspecified',
       tb: tableNumFromChannel(txt(col.channel)),
-      dt, dy: dy||dt, hr,
+      dt, dy: dy||dt, hr, ts,
       gi: txt(col.goodItems), ii: txt(col.improveItems),
       cm: txt(col.comments), cp: txt(col.complaint),
     });
@@ -5508,10 +5534,15 @@ function mergeGuestFeedbackDuplicates(records){
   const seen = new Set();
   const out = [];
   let mergedCount = 0;
+  // Without an exact submission timestamp there's no reliable way to tell a genuine second
+  // response from a re-exported one — two guests at the same table in the same hour can
+  // easily leave the same short comment ("Good", "Nothing") — so those rows are left alone.
+  const hasTs = records.some(r=>r.ts);
+  if(!hasTs) return { records, mergedCount: 0 };
   records.forEach(r=>{
     const hasText = r.cm || r.cp || r.gi || r.ii;
-    if(!hasText){ out.push(r); return; }
-    const key = [r.sp,r.fr,r.ci,r.fd,r.cf,r.st,r.sh,r.ml,r.tt,r.tb,r.dt,r.hr,r.gi,r.ii,r.cm,r.cp].map(dedupKeyPart).join('|');
+    if(!hasText || !r.ts){ out.push(r); return; }
+    const key = [r.ts,r.sp,r.fr,r.ci,r.fd,r.cf,r.st,r.sh,r.ml,r.tt,r.tb,r.gi,r.ii,r.cm,r.cp].map(dedupKeyPart).join('|');
     if(seen.has(key)){ mergedCount++; return; }
     seen.add(key);
     out.push(r);
