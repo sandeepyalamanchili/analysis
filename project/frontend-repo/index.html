@@ -1036,6 +1036,41 @@ function mergeExactDuplicates(records, keyFn){
   return { records: out, mergedCount };
 }
 let KPI_WHY_SEQ = 0;
+// The same real-world name often arrives spelled slightly differently across rows —
+// "Afternoon Shift" vs "Afternoon shift", "10 to 19" vs "10 to 19 ", "Handcrafted Magic"
+// vs "Handcrafted Magic ". Left alone each variant becomes its own row in every table,
+// its own slice in every chart and its own entry in every filter, which reads as duplicate
+// data even though no row is duplicated. This rewrites each variant to the spelling that
+// appears most often in the file, so the real one wins rather than an arbitrary first-seen
+// one. Grouping is on case and whitespace only — genuinely different names never merge.
+function canonicalizeLabels(records, fields){
+  fields.forEach(field=>{
+    const counts = new Map();   // normalized -> Map(originalSpelling -> occurrences)
+    records.forEach(r=>{
+      const v = r[field];
+      if(v==null || v==='') return;
+      const key = String(v).replace(/\s+/g,' ').trim().toLowerCase();
+      if(!key) return;
+      if(!counts.has(key)) counts.set(key, new Map());
+      const m = counts.get(key);
+      const shown = String(v).replace(/\s+/g,' ').trim();
+      m.set(shown, (m.get(shown)||0) + 1);
+    });
+    const best = new Map();
+    counts.forEach((m,key)=>{
+      let winner = null, top = -1;
+      m.forEach((n,shown)=>{ if(n>top){ top=n; winner=shown; } });
+      best.set(key, winner);
+    });
+    records.forEach(r=>{
+      const v = r[field];
+      if(v==null || v==='') return;
+      const key = String(v).replace(/\s+/g,' ').trim().toLowerCase();
+      if(best.has(key)) r[field] = best.get(key);
+    });
+  });
+  return records;
+}
 function kpiCard(val,label,sub,color,breakdownKey,valColor){
   const clickable = breakdownKey ? ' kpi-clickable" data-breakdown-key="'+breakdownKey+'" data-breakdown-label="'+escapeHtml(label)+'" tabindex="0" role="button" aria-haspopup="dialog' : '';
   const hint = breakdownKey ? '<div class="kpi-hint">Click for breakdown ▸</div>' : '';
@@ -4500,6 +4535,7 @@ let KDS_COL_MAP = {};
 let KDS_MERGED_DUP_COUNT = 0;      // exact-duplicate rows collapsed on the last upload, for display
 let HOURLY_MERGED_DUP_COUNT = 0;
 let SALE_MERGED_DUP_COUNT = 0;
+let SALE_RAW_USABLE_COUNT = 0;   // rows read before grouping, used for the coverage check
 const KDS_DEFAULT_STANDARD = 10;   // minutes, used only when neither a user target nor a reference-sheet target exists
 
 // Real target prep times supplied for 7 Midway Plaza Suryapet (from the restaurant's own
@@ -4722,10 +4758,15 @@ function mapRowsToKds(rawRows){
     // reference-backed department at all, so it's left unassigned rather than guessed at via
     // its category, or filled in with a raw station label (like "Kitchen"/"DOSA") that was
     // never one of the restaurant's actual named departments.
-    const rawCat = txt(col.category) || 'Uncategorised';
+    // Labels are tidied before use: the reference sheet stores some names with a trailing
+    // space ("Handcrafted Magic ", "Desserts ") while the KDS export has them without, so
+    // without this the same category renders as two separate rows in every table and chart.
+    // This only normalizes surrounding/repeated whitespace — the wording itself is untouched.
+    const tidyLabel = s => { const t = String(s==null?'':s).replace(/\s+/g,' ').trim(); return t || null; };
+    const rawCat = tidyLabel(txt(col.category)) || 'Uncategorised';
     const ref = KDS_REF_BY_ITEM[kdsNormName(item || '')];
-    const cat = (ref && ref.cat) || rawCat;
-    const dept = (ref && ref.dept) || null;
+    const cat = tidyLabel(ref && ref.cat) || rawCat;
+    const dept = tidyLabel(ref && ref.dept) || null;
 
     records.push({
       item: item || 'Unspecified item',
@@ -4751,6 +4792,7 @@ function mapRowsToKds(rawRows){
   // match as well. If neither identifier column exists, nothing is merged at all: an
   // unverifiable guess that destroys real orders is far worse than leaving a stray
   // double-export in place.
+  canonicalizeLabels(records, ['item','cat','dept','st','status']);
   const kdsHasIds = records.some(r=>r.billNo || r.kotNo);
   const kdsDeduped = kdsHasIds
     ? mergeExactDuplicates(records,
@@ -4865,6 +4907,7 @@ function mapRowsToHourly(rawRows){
   // Same principle as KDS: a bill legitimately repeats the same item at the same price, so
   // merging on attributes alone deletes real sales. Only rows sharing the export's own
   // unique identifiers are candidates, and with no identifier column nothing is merged.
+  canonicalizeLabels(records, ['item','cat','superCat','section','paymentMode']);
   const hourlyHasIds = records.some(r=>r.lineNo || r.billNo);
   const hourlyDeduped = hourlyHasIds
     ? mergeExactDuplicates(records,
@@ -4920,6 +4963,8 @@ function mapRowsToSaleSummary(rawRows){
   // fixed menu price and an occasional differing row is more likely a one-off discount or
   // correction than the item's real price changing.
   const groups = new Map();
+  SALE_RAW_USABLE_COUNT = rawRecords.length;
+  canonicalizeLabels(rawRecords, ['item']);
   rawRecords.forEach(r=>{
     const key = r.item.toLowerCase().replace(/\s+/g,' ');
     if(!groups.has(key)) groups.set(key, {item:r.item.replace(/\s+/g,' '), rateCounts:{}, qty:0, netAmt:0});
@@ -4939,8 +4984,15 @@ function assessSaleConfidence(rawRows, records, col){
   if(!records.length) return {ok:false};
   const hasItem = !!col.item;
   const hasMoney = !!col.rate || !!col.netAmt;
-  const coverage = rawRows.length ? records.length/rawRows.length : 0;
-  return { ok: hasItem && hasMoney && coverage >= 0.5, hasItem, hasMoney, coverage };
+  // Coverage must be measured against the rows that were successfully read, NOT against the
+  // grouped output. This export repeats every item once per period, so grouping deliberately
+  // collapses ~1,100 rows into ~136 real items — comparing 136 to 1,100 looks like a 12%
+  // parse failure and wrongly rejects a perfectly good sheet, dropping it into the generic
+  // raw-row view where the item count appears as hundreds instead of the true store count.
+  const readCount = (typeof SALE_RAW_USABLE_COUNT === 'number' && SALE_RAW_USABLE_COUNT > 0)
+    ? SALE_RAW_USABLE_COUNT : records.length;
+  const coverage = rawRows.length ? readCount/rawRows.length : 0;
+  return { ok: hasItem && hasMoney && coverage >= 0.5, hasItem, hasMoney, coverage, groupedInto: records.length };
 }
 
 /* =========================================================
@@ -5604,6 +5656,7 @@ function mapRowsToRecords(rawRows, overrideScales){
     for(let i=0;i<segRecords.length;i++) records.push(segRecords[i]);
   });
   LAST_COL_MAP = baseMapping || {};
+  canonicalizeLabels(records, ['st','sh','ml','tt']);
   const guestDeduped = mergeGuestFeedbackDuplicates(records);
   GUEST_MERGED_DUP_COUNT = guestDeduped.mergedCount;
   return guestDeduped.records;
