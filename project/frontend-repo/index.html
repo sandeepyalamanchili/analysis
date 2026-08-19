@@ -5838,7 +5838,17 @@ function buildOrdinalScale(values){
 
 /* What is this column, judged by its contents rather than its title?
    Scans the full column, not a sample, so the verdict reflects every row. */
+let _profileCache = new WeakMap();
 function profileColumnValues(rawRows, colName){
+  if(!colName || !rawRows.length) return {type:'empty', filled:0, n:0};
+  let perSheet = _profileCache.get(rawRows);
+  if(!perSheet){ perSheet = new Map(); _profileCache.set(rawRows, perSheet); }
+  if(perSheet.has(colName)) return perSheet.get(colName);
+  const result = computeColumnProfile(rawRows, colName);
+  perSheet.set(colName, result);
+  return result;
+}
+function computeColumnProfile(rawRows, colName){
   const vals = [];
   if(!colName || !rawRows.length) return {type:'empty', filled:0, n:0};
   // Scans every row, not a sample — a fixed-size sample can land entirely outside the

@@ -24,6 +24,7 @@ Design notes that matter:
 """
 
 import io
+import gzip
 import os
 import sys
 import json
@@ -222,8 +223,21 @@ class Handler(BaseHTTPRequestHandler):
         pass  # keep the console quiet; the launcher prints what matters
 
     def _send(self, code, body: bytes, ctype="application/json"):
+        encoding = None
+        if (
+            len(body) > 8192
+            and "gzip" in self.headers.get("Accept-Encoding", "").lower()
+        ):
+            try:
+                body = gzip.compress(body, 5)
+                encoding = "gzip"
+            except Exception:
+                encoding = None
         self.send_response(code)
         self.send_header("Content-Type", ctype)
+        if encoding:
+            self.send_header("Content-Encoding", encoding)
+            self.send_header("Vary", "Accept-Encoding")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("Access-Control-Allow-Origin", ALLOWED_ORIGIN)
@@ -234,7 +248,7 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
     def _json(self, code, obj):
-        self._send(code, json.dumps(obj).encode("utf-8"))
+        self._send(code, json.dumps(obj, separators=(",", ":")).encode("utf-8"))
 
     def do_OPTIONS(self):
         # Browsers send this "preflight" check before the real POST /api/upload request
