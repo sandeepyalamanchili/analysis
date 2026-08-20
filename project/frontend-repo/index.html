@@ -200,6 +200,13 @@ html[data-mode="light"] ::-webkit-scrollbar-thumb{background:#c2cddf;}
 .steward-chip .who{display:flex;flex-direction:column;gap:2px;min-width:0;}
 .steward-chip .nm{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .steward-chip .sub{font-size:11px;color:var(--muted2);}
+.cross-filter{display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--border-soft);border-radius:12px;padding:11px 14px;margin-bottom:16px;}
+.cf-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted2);font-weight:700;margin-right:2px;}
+.cf-range{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);}
+.cf-range input{background:var(--bg2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:5px 7px;font-size:11.5px;font-family:inherit;}
+.cf-state{font-size:11.5px;color:var(--muted2);margin-left:auto;}
+.steward-report-card{max-width:860px;position:relative;}
+.steward-report-card .modal-close{position:sticky;top:0;float:right;z-index:2;}
 .report-head{margin-bottom:16px;}
 .report-name{font-size:21px;font-weight:800;letter-spacing:-0.01em;}
 .report-sub{font-size:12.5px;color:var(--muted);margin-top:4px;}
@@ -410,6 +417,7 @@ input[type=range]{accent-color:var(--orange);width:120px;}
       </div>
       <button class="action-btn" id="newFileBtn">📁 New File</button>
       <div style="position:relative;">
+        <button class="action-btn" id="modeToggleBtn" title="Switch between dark and light">🌙 Dark</button>
         <button class="action-btn" id="themeBtn">🎨 Theme</button>
         <div id="themePanel" class="filter-panel" style="min-width:280px;">
           <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700;margin-bottom:10px;">Customize colors</div>
@@ -435,7 +443,7 @@ input[type=range]{accent-color:var(--orange);width:120px;}
 <div class="content" id="content"></div>
 
 <div class="modal-backdrop" id="stewardReportBackdrop">
-  <div class="modal" role="dialog" aria-modal="true" aria-label="Steward report card">
+  <div class="modal-card steward-report-card" role="dialog" aria-modal="true" aria-label="Steward report card">
     <button class="modal-close" id="stewardReportClose" aria-label="Close">✕</button>
     <div id="stewardReportBody"></div>
   </div>
@@ -661,6 +669,8 @@ let THEME_MODE = 'dark';
 function applyThemeMode(mode){
   THEME_MODE = mode;
   document.documentElement.setAttribute('data-mode', mode);
+  const btn = document.getElementById('modeToggleBtn');
+  if(btn) btn.textContent = mode==='light' ? '☀️ Light' : '🌙 Dark';
   applyTheme(mode==='light' ? LIGHT_THEME_VALUES : DEFAULT_THEME_VALUES);
 }
 let THEME = {...DEFAULT_THEME_VALUES};
@@ -691,6 +701,11 @@ function buildThemePanel(){
     inp.oninput = ()=>{ applyTheme({[inp.dataset.themeKey]: inp.value}); };
   });
 }
+document.getElementById('modeToggleBtn').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  applyThemeMode(THEME_MODE==='light' ? 'dark' : 'light');
+  if(document.getElementById('themeSwatches')) buildThemePanel();
+});
 const themeBtn = document.getElementById('themeBtn');
 const themePanel = document.getElementById('themePanel');
 themeBtn.addEventListener('click', (e)=>{
@@ -1317,6 +1332,7 @@ let breakdownTriggerEl = null;
 // 1-10 mark scale the guest-feedback breakdown below is built for, so each one groups its
 // number by whichever dimension actually explains it (department, category, payment mode,
 // or top items), read fresh from the currently open sheet every time the card is clicked.
+let DETRACTOR_TREND_DATA = {};
 const GENERIC_BREAKDOWN_BUILDERS = {
   'kds:orders_by_dept': ()=>{
     const sheet = KDS_SHEET_DATA[CURRENT_SHEET_NAME]; if(!sheet) return null;
@@ -1420,6 +1436,32 @@ function openGenericBreakdown(data, cardLabel){
 }
 function openBreakdownModal(key, cardLabel, triggerEl){
   breakdownTriggerEl = triggerEl || document.activeElement;
+  if(key && key.indexOf('detractor_trend:')===0){
+    const info = DETRACTOR_TREND_DATA[key.split(':')[1]];
+    if(info){
+      const dayRows = [];
+      const byDay = {};
+      RECORDS.forEach(r=>{
+        if(!r.dt || r.fd==null) return;
+        if(r.dt < info.prevFrom || r.dt > info.curTo) return;
+        if(!byDay[r.dt]) byDay[r.dt] = {n:0, d:0};
+        byDay[r.dt].n++;
+        if(r.fd<=6) byDay[r.dt].d++;
+      });
+      Object.keys(byDay).sort().forEach(dt=>{
+        const g = byDay[dt];
+        const period = (dt >= info.curFrom) ? 'this '+info.label : 'last '+info.label;
+        dayRows.push({label: dt+'  ('+period+')', value: 100*g.d/g.n,
+          display: pct(g.d,g.n)+'%  ·  '+g.d+' of '+g.n});
+      });
+      openGenericBreakdown({
+        title: 'Food Detractors — day by day',
+        sub: `This ${info.label} ${fmt1(info.cur)}% vs last ${info.label} ${fmt1(info.prev)}% · ${info.prevFrom} to ${info.curTo}`,
+        rows: dayRows, colLabel: 'Day'
+      }, cardLabel);
+      return;
+    }
+  }
   if(GENERIC_BREAKDOWN_BUILDERS[key]){
     openGenericBreakdown(GENERIC_BREAKDOWN_BUILDERS[key](), cardLabel);
     return;
@@ -1741,9 +1783,11 @@ RENDERERS.overview = (root,data)=>{
       const better = diff < 0;
       const arrow = Math.abs(diff) < 0.05 ? '→' : (better ? '▼' : '▲');
       const color = Math.abs(diff) < 0.05 ? C.muted : (better ? C.green : C.red);
+      DETRACTOR_TREND_DATA[p.label] = {label:p.label, cur, prev, diff,
+        curFrom:p.curFrom, curTo:p.curTo, prevFrom:p.prevFrom, prevTo:p.prevTo};
       return kpiCard(`${fmt1(cur)}% ${arrow}`, 'This '+p.label+' vs last',
         `was ${fmt1(prev)}% last ${p.label} — ${better?'down':'up'} ${fmt1(Math.abs(diff))} pts`,
-        color, null, color);
+        color, 'detractor_trend:'+p.label, color);
     }).filter(Boolean);
     if(!cards.length) return;
     root.appendChild(el(`<h3 class="section-title">Detractors — Trend <span class="section-sub">latest week and month against the period before, from the whole file</span></h3>`));
@@ -1817,7 +1861,7 @@ RENDERERS.overview = (root,data)=>{
 
   const daysComposite = byDate.map(g=>g.length? (npsComposite(g, ALL_METRIC_KEYS) ?? 0) : 0);
   const aboveTarget = daysComposite.filter(v=>v*10>=DRILL.target).length;
-  root.appendChild(el(`<div style="max-width:260px;margin-top:16px;">${kpiCard(aboveTarget+'/'+DATE_ORDER.length,'Days Meeting Target','composite score × 10 ≥ '+DRILL.target,C.green)}</div>`));
+  root.appendChild(el(`<div style="max-width:260px;margin-top:16px;">${kpiCard(aboveTarget+'/'+DATE_ORDER.length,'Days Meeting Target','service NPS ≥ '+DRILL.target,C.green)}</div>`));
 
   root.appendChild(el(`<div class="grid grid-2" style="margin-top:16px;">
     <div class="card"><div class="card-title">Responses by Shift</div><div class="chart-wrap short"><canvas id="c2"></canvas></div></div>
@@ -2449,8 +2493,7 @@ RENDERERS.stewards = (root,data)=>{
   const topPerformer = tierEligible.slice().sort(stewardRankComparator)[0];
   root.appendChild(el(`<div class="grid grid-4">
     ${kpiCard(rows.length,'Active Stewards (in selection)','',C.teal)}
-    ${kpiCard(topPerformer?topPerformer.name:'—','Top Performer',topPerformer?fmt1(topPerformer.comp)+' composite score':`need ≥${MIN_RESPONSES_FOR_TIER} responses`,C.green)}
-    ${kpiCard(fmt1((()=>{ const cs = rows.map(r=>r.comp).filter(v=>v!=null); return cs.length ? cs.reduce((s,v)=>s+v,0)/cs.length : null; })()),'Avg Composite Score (all stewards)','excludes food rating · unscored stewards not counted',C.orange)}
+    ${kpiCard(topPerformer?topPerformer.name:'—','Top Performer',topPerformer?'Service NPS '+fmtNps(topPerformer.comp):`need ≥${MIN_RESPONSES_FOR_TIER} responses`,C.green)}
     ${kpiCard(inconsistentCount,'❓ Inconsistent (< '+MIN_RESPONSES_FOR_TIER+' responses)','not tier-eligible yet',C.muted)}
     ${kpiCard(excludedLoggingGaps,'🚫 Logging Gaps Excluded','blank/placeholder steward values — not counted as stewards',C.red)}
   </div>`));
@@ -2882,7 +2925,7 @@ RENDERERS.voice = (root,data)=>{
     panel.innerHTML = `
       <div class="card" style="border-left:3px solid ${C.orange};margin-top:14px;">
         <div class="card-title"><span>Q${q.qno} · ${q.icon} ${escapeHtml(q.title)}</span></div>
-        <p style="font-size:12.5px;color:var(--muted);line-height:1.6;">Showing only the comments guests wrote against this question. Each is sorted into praised / passive / could be improved using ${q.scoreKey?`that guest's <b style="color:var(--text)">${escapeHtml(q.scoreLabel)}</b> rating`:`the guest's <b style="color:var(--text)">overall composite score</b>, since this question has no rating of its own`}.</p>
+        <p style="font-size:12.5px;color:var(--muted);line-height:1.6;">Showing only the comments guests wrote against this question. Each is sorted into praised / passive / could be improved using ${q.scoreKey?`that guest's <b style="color:var(--text)">${escapeHtml(q.scoreLabel)}</b> rating`:`the guest's <b style="color:var(--text)">overall service NPS</b>, since this question has no rating of its own`}.</p>
       </div>
       <input class="search-input" id="qSearch" placeholder="Search comments in Q${q.qno}…" value="${escapeHtml(document.getElementById('qSearch')?.value||'')}">
       ${fieldTabs}
@@ -4267,7 +4310,8 @@ function renderKdsSheet(sheetName){
   document.getElementById('app').style.display = 'block';
   applyBrandName();
 
-  const { records, col, confidence, mergedDupCount: KDS_MERGED_DUP_COUNT } = KDS_SHEET_DATA[sheetName];
+  const { records: allRecords, col, confidence, mergedDupCount: KDS_MERGED_DUP_COUNT } = KDS_SHEET_DATA[sheetName];
+  const records = crossFilterRows(allRecords);
   const timed = records.filter(r=>r.mins!=null);
   const hasDept = records.some(r=>r.dept);
   const dates = [...new Set(records.map(r=>r.dt).filter(Boolean))].sort();
@@ -4276,6 +4320,7 @@ function renderKdsSheet(sheetName){
 
   const root = document.getElementById('content');
   root.innerHTML = '';
+  root.appendChild(crossFilterBar(allRecords, ()=>renderKdsSheet(sheetName)));
 
   // ---- what was detected, stated plainly --------------------------------------------
   const detected = [
@@ -4518,13 +4563,15 @@ function renderHourlySheet(sheetName){
   document.getElementById('app').style.display = 'block';
   applyBrandName();
 
-  const { records, col, mergedDupCount: HOURLY_MERGED_DUP_COUNT } = HOURLY_SHEET_DATA[sheetName];
+  const { records: allRecords, col, mergedDupCount: HOURLY_MERGED_DUP_COUNT } = HOURLY_SHEET_DATA[sheetName];
+  const records = crossFilterRows(allRecords);
   const dates = [...new Set(records.map(r=>r.dt).filter(Boolean))].sort();
   const dateTxt = dates.length ? `${dates[0]} to ${dates[dates.length-1]} · ` : '';
   document.getElementById('headerSub').textContent = `${dateTxt}${records.length.toLocaleString()} line items · Hourly Sales view`;
 
   const root = document.getElementById('content');
   root.innerHTML = '';
+  root.appendChild(crossFilterBar(allRecords, ()=>renderHourlySheet(sheetName)));
 
   const detected = [
     ['Item', col.item], ['Category', col.category], ['Bill No.', col.billNo],
@@ -4747,8 +4794,83 @@ function renderSaleDataSheet(sheetName){
   document.getElementById('saleItemSearch').oninput = drawTable;
 }
 
+let CROSS_DATE = {from:'', to:''};
+function syncCrossDateFromQr(){
+  const sel = [...FILTERS.dt].sort();
+  CROSS_DATE = sel.length ? {from:sel[0], to:sel[sel.length-1]} : {from:'', to:''};
+}
+function crossFilterRows(records){
+  if(!CROSS_DATE.from && !CROSS_DATE.to) return records;
+  return records.filter(r=>{
+    if(!r.dt) return false;
+    if(CROSS_DATE.from && r.dt < CROSS_DATE.from) return false;
+    if(CROSS_DATE.to && r.dt > CROSS_DATE.to) return false;
+    return true;
+  });
+}
+function crossFilterBar(records, onChange){
+  const all = [...new Set(records.map(r=>r.dt).filter(Boolean))].sort();
+  const minD = all[0]||'', maxD = all[all.length-1]||'';
+  const from = CROSS_DATE.from || minD, to = CROSS_DATE.to || maxD;
+  const active = !!(CROSS_DATE.from || CROSS_DATE.to);
+  const bar = el(`<div class="cross-filter">
+    <span class="cf-label">Filter by date</span>
+    <button class="band-tab cf-preset" data-p="all">All</button>
+    <button class="band-tab cf-preset" data-p="today">Today</button>
+    <button class="band-tab cf-preset" data-p="week">This week</button>
+    <button class="band-tab cf-preset" data-p="month">This month</button>
+    <label class="cf-range">From <input type="date" id="cfFrom" value="${from}" min="${minD}" max="${maxD}"></label>
+    <label class="cf-range">To <input type="date" id="cfTo" value="${to}" min="${minD}" max="${maxD}"></label>
+    <span class="cf-state">${active ? escapeHtml(from+' → '+to) : 'showing every date'}</span>
+  </div>`);
+  bar.querySelectorAll('.cf-preset').forEach(b=>{
+    b.onclick = ()=>{
+      const p = b.getAttribute('data-p');
+      if(p==='all'){ CROSS_DATE = {from:'', to:''}; }
+      else {
+        const latest = maxD;
+        const d = new Date(latest+'T00:00:00');
+        const back = p==='today' ? 0 : p==='week' ? 6 : 29;
+        d.setDate(d.getDate()-back);
+        const pad = n=>String(n).padStart(2,'0');
+        CROSS_DATE = {from: d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()), to: latest};
+      }
+      pushCrossDateToQr();
+      onChange();
+    };
+  });
+  const f = bar.querySelector('#cfFrom'), t = bar.querySelector('#cfTo');
+  const apply = ()=>{
+    CROSS_DATE = {from: f.value||'', to: t.value||''};
+    if(CROSS_DATE.from && CROSS_DATE.to && CROSS_DATE.from > CROSS_DATE.to){
+      const tmp = CROSS_DATE.from; CROSS_DATE.from = CROSS_DATE.to; CROSS_DATE.to = tmp;
+    }
+    pushCrossDateToQr();
+    onChange();
+  };
+  f.onchange = apply; t.onchange = apply;
+  return bar;
+}
+function pushCrossDateToQr(){
+  if(!FILTERS.dt) return;
+  FILTERS.dt.clear();
+  if(CROSS_DATE.from || CROSS_DATE.to){
+    DATE_PRESET = 'custom';
+    uniqueSorted('dt').filter(Boolean).forEach(v=>{
+      if(CROSS_DATE.from && v < CROSS_DATE.from) return;
+      if(CROSS_DATE.to && v > CROSS_DATE.to) return;
+      FILTERS.dt.add(v);
+    });
+  } else {
+    DATE_PRESET = 'all';
+  }
+  const def = FILTER_DEFS.find(x=>x.key==='dt');
+  if(def) updateFilterButtonState(def);
+}
 function switchToSheet(sheetName){
   const mode = SHEET_MODE[sheetName];
+  if(SHEET_MODE[CURRENT_SHEET_NAME]==='guest_feedback') syncCrossDateFromQr();
+  else if(mode==='guest_feedback') pushCrossDateToQr();
   CURRENT_SHEET_NAME = sheetName;
   buildSheetSelector();
   buildBranchSelector();
